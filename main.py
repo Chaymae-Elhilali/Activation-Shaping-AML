@@ -99,18 +99,26 @@ def train(model, data):
         }
         torch.save(checkpoint, os.path.join('record', CONFIG.experiment_name, 'last.pth'))
 
+"""
+ alpha: [0.1, 0.2, 0.3, 0.5, 0.8, 1] 6
+ SKIP_N: [0, 2, 6, 8, 10, 12, 14] 7
+ APPLY_EVERY_N: [0, 1, 3, 4] 4
+ 6 * 7 * 4 = 42 * 4 = 168
+"""
+
 ALPHA = 0.8
-APPLY_EVERY_N = 2
-SKIP_FIRST_N = 10
+APPLY_EVERY_N = 0
+SKIP_FIRST_N = 14
 
 def get_M_random_generator_function(alpha):
   #Input: tensor size; output: random 
   def M_random_generator(size):
     M = torch.ones(size)
-    M = torch.where(torch.rand(size) < alpha, M, torch.zeros(size))
+    M = torch.where(torch.rand(size) <= alpha, M, torch.zeros(size))
     M = M.to(CONFIG.device, non_blocking=False)
     return M
   return M_random_generator
+
 
 def main():
     # Load dataset
@@ -122,8 +130,6 @@ def main():
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
-        ALPHA = 0.6
-        APPLY_EVERY_N = 2
         hook_activation_shaping(model, get_M_random_generator_function(ALPHA), APPLY_EVERY_N, SKIP_FIRST_N)
 
     

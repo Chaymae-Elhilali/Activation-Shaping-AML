@@ -26,12 +26,15 @@ def hook_activation_shaping(model: BaseResNet18, generate_M, every_n_convolution
             all_layers.append(layer.conv1)
             all_layers.append(layer.conv2)
     #Hook into the convolutional layers
+    n_applied = 0
     for i, layer in enumerate(all_layers):
         output_size = int((output_size + 2*layer.padding[0] - layer.kernel_size[0]) / layer.stride[0] + 1)
-        if i % every_n_convolution == 0 and i >= skip_first_n_layers:
-            #print(layer.out_channels);
+        
+        if (i >= skip_first_n_layers) and (every_n_convolution==0 or (i-skip_first_n_layers % every_n_convolution == 0)):
             M = generate_M([output_size,output_size])
             layer.register_forward_hook(get_activation_shaping_hook(M))
+            n_applied += 1
+    print(f"Applied to {n_applied} layers")
 
 
 def get_activation_shaping_hook(M):
@@ -42,7 +45,7 @@ def get_activation_shaping_hook(M):
         #Output shape: [ batch_size, n_filters, n, n ]
 
         #Binarize output: if < 0 -> 0, else -> 1
-        activation = torch.where(output < 0, torch.zeros_like(output), torch.ones_like(output))
+        activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
         #Multiply output with M
         expanded_M = M.unsqueeze(0).unsqueeze(0).expand(activation.shape[0], activation.shape[1], -1, -1)
         output = torch.mul(activation, expanded_M)
