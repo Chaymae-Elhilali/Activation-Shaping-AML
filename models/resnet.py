@@ -33,7 +33,7 @@ def hook_activation_shaping(model: BaseResNet18, generate_M, every_n_convolution
             M = generate_M([output_size,output_size])
             layer.register_forward_hook(get_activation_shaping_hook(M))
 
-#TODO check that it works...
+
 def get_activation_shaping_hook(M):
     #Get M and binarize it
     

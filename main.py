@@ -37,6 +37,8 @@ def evaluate(model, data):
     logging.info(f'Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
 
 
+DEBUG_TRAIN_EACH_TIME=True
+
 def train(model, data):
 
     # Create optimizers & schedulers
@@ -46,7 +48,8 @@ def train(model, data):
     
     # Load checkpoint (if it exists)
     cur_epoch = 0
-    if os.path.exists(os.path.join('record', CONFIG.experiment_name, 'last.pth')):
+    if not DEBUG_TRAIN_EACH_TIME and os.path.exists(os.path.join('record', CONFIG.experiment_name, 'last.pth')):
+        print("Reloading from saved state")
         checkpoint = torch.load(os.path.join('record', CONFIG.experiment_name, 'last.pth'))
         cur_epoch = checkpoint['epoch']
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -96,6 +99,10 @@ def train(model, data):
         }
         torch.save(checkpoint, os.path.join('record', CONFIG.experiment_name, 'last.pth'))
 
+ALPHA = 0.8
+APPLY_EVERY_N = 2
+SKIP_FIRST_N = 10
+
 def get_M_random_generator_function(alpha):
   #Input: tensor size; output: random 
   def M_random_generator(size):
@@ -117,7 +124,7 @@ def main():
         #Apply hooks
         ALPHA = 0.6
         APPLY_EVERY_N = 2
-        hook_activation_shaping(model, get_M_random_generator_function(ALPHA), APPLY_EVERY_N)
+        hook_activation_shaping(model, get_M_random_generator_function(ALPHA), APPLY_EVERY_N, SKIP_FIRST_N)
 
     
     model.to(CONFIG.device)
@@ -126,7 +133,6 @@ def main():
         train(model, data)
     else:
         evaluate(model, data['test'])
-    
 
 if __name__ == '__main__':
     warnings.filterwarnings('ignore', category=UserWarning)
@@ -141,7 +147,7 @@ if __name__ == '__main__':
 
     # Setup logging
     logging.basicConfig(
-        filename=os.path.join(CONFIG.save_dir, 'log.txt'), 
+        filename=os.path.join(CONFIG.save_dir, f"{SKIP_FIRST_N}-{ALPHA}-{APPLY_EVERY_N}-log.txt"), 
         format='%(message)s', 
         level=logging.INFO, 
         filemode='a'
