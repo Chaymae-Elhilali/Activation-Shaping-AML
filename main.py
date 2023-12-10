@@ -63,9 +63,10 @@ def train(model, data):
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
                 if CONFIG.experiment in ['baseline']:
+                    #x: feature; y: label
                     x, y = batch
-                    x, y = x.to(CONFIG.device), y.to(CONFIG.device)
-                    loss = F.cross_entropy(model(x), y)
+                    x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
+                    loss = F.cross_entropy(model(x), y) #cross entropy
 
                 ######################################################
                 #elif... TODO: Add here train logic for the other experiments
