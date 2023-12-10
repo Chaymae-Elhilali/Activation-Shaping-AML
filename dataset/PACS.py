@@ -29,7 +29,7 @@ def load_data():
     test_transform = get_transform(size=224, mean=mean, std=std, preprocess=False)
 
     # Load examples & create Dataset
-    if CONFIG.experiment in ['baseline']:
+    if CONFIG.experiment in ['baseline', 'activation_shaping_experiments']:
         source_examples, target_examples = [], []
 
         # Load source

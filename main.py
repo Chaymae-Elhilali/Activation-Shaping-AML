@@ -12,7 +12,7 @@ import numpy as np
 from parse_args import parse_arguments
 
 from dataset import PACS
-from models.resnet import BaseResNet18
+from models.resnet import BaseResNet18, hook_activation_shaping
 
 from globals import CONFIG
 
@@ -62,7 +62,7 @@ def train(model, data):
             # Compute loss
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
-                if CONFIG.experiment in ['baseline']:
+                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
                     #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
@@ -96,22 +96,26 @@ def train(model, data):
         }
         torch.save(checkpoint, os.path.join('record', CONFIG.experiment_name, 'last.pth'))
 
+def get_M_random_generator_function(alpha):
+  #Input: tensor size; output: random 
+  def M_random_generator(size):
+    M = torch.ones(size)
+    M = torch.where(torch.rand(size) < alpha, M, torch.zeros(size))
+    return M
+  return M_random_generator
 
 def main():
-    model = BaseResNet18()
-    print(model)
-    exit()
     # Load dataset
     data = PACS.load_data()
 
     # Load model
     if CONFIG.experiment in ['baseline']:
         model = BaseResNet18()
+    elif CONFIG.experiment in ['activation_shaping_experiments']:
+        model = BaseResNet18()
+        #Apply hooks
+        hook_activation_shaping(model, get_M_random_generator_function(0.6), 2)
 
-    ######################################################
-    #elif... TODO: Add here model loading for the other experiments (eg. DA and optionally DG)
-
-    ######################################################
     
     model.to(CONFIG.device)
 

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
+from torch.types import Device
 from torchvision.models import resnet18, ResNet18_Weights
+from globals import CONFIG
 
 class BaseResNet18(nn.Module):
     def __init__(self):
@@ -12,7 +14,7 @@ class BaseResNet18(nn.Module):
         return self.resnet(x)
 
 
-def hook_activation_shaping(model: BaseResNet18, M: torch.Tensor, every_n_convolution=1, skip_first_n_layers=0):
+def hook_activation_shaping(model: BaseResNet18, generate_M, every_n_convolution=1, skip_first_n_layers=0):
     #TODO: check if we'll need different M for each layer we apply the hook to
     #Make a list of all network convolutional layers to easily iterate over them
     all_layers = []
@@ -24,10 +26,13 @@ def hook_activation_shaping(model: BaseResNet18, M: torch.Tensor, every_n_convol
     #Hook into the convolutional layers
     for i, layer in enumerate(all_layers):
         if i % every_n_convolution == 0 and i >= skip_first_n_layers:
+            #shape = layer.
+            M = generate_M(shape)
             layer.register_forward_hook(get_activation_shaping_hook(M))
 
 #TODO check that it works...
 def get_activation_shaping_hook(M):
+    #Get M and binarize it
     M = torch.where(M < 0, torch.zeros_like(M), torch.ones_like(M))
     def activation_shaping_hook(module, input, output):
         #Get activation from previous layer
