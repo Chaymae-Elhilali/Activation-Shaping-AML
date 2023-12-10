@@ -98,6 +98,9 @@ def train(model, data):
 
 
 def main():
+    model = BaseResNet18()
+    print(model)
+    exit()
     # Load dataset
     data = PACS.load_data()
 
