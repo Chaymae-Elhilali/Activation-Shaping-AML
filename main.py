@@ -101,6 +101,7 @@ def get_M_random_generator_function(alpha):
   def M_random_generator(size):
     M = torch.ones(size)
     M = torch.where(torch.rand(size) < alpha, M, torch.zeros(size))
+    M = M.to(CONFIG.device, non_blocking=False)
     return M
   return M_random_generator
 
@@ -114,7 +115,9 @@ def main():
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
-        hook_activation_shaping(model, get_M_random_generator_function(0.6), 2)
+        ALPHA = 0.6
+        APPLY_EVERY_N = 2
+        hook_activation_shaping(model, get_M_random_generator_function(ALPHA), APPLY_EVERY_N)
 
     
     model.to(CONFIG.device)
