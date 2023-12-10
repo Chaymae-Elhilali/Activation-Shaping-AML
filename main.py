@@ -98,7 +98,6 @@ def train(model, data):
 
 
 def main():
-    
     # Load dataset
     data = PACS.load_data()
 
