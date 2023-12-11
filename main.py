@@ -45,7 +45,6 @@ def train(model, data):
     optimizer = torch.optim.SGD(model.parameters(), weight_decay=0.0005, momentum=0.9, nesterov=True, lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(CONFIG.epochs * 0.8), gamma=0.1)
     scaler = torch.cuda.amp.GradScaler(enabled=True)
-    
     # Load checkpoint (if it exists)
     cur_epoch = 0
     if not DEBUG_TRAIN_EACH_TIME and os.path.exists(os.path.join('record', CONFIG.experiment_name, 'last.pth')):
@@ -131,18 +130,25 @@ def main():
 
 if __name__ == '__main__':
     warnings.filterwarnings('ignore', category=UserWarning)
-
     # Parse arguments
     args = parse_arguments()
     CONFIG.update(vars(args))
+    if ("ALPHA" in CONFIG.dataset_args):
+      CONFIG.ALPHA = CONFIG.dataset_args["ALPHA"]
+    if ("SKIP_FIRST_N" in CONFIG.dataset_args):
+      CONFIG.SKIP_FIRST_N = CONFIG.dataset_args["SKIP_FIRST_N"]
+    if ("APPLY_EVERY_N" in CONFIG.dataset_args):
+      CONFIG.APPLY_EVERY_N = CONFIG.dataset_args["APPLY_EVERY_N"]
 
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)
     os.makedirs(CONFIG.save_dir, exist_ok=True)
-
     # Setup logging
+    LOG_FILENAME = "log.txt"
+    if (CONFIG.experiment == "activation_shaping_experiments"):
+      LOG_FILENAME = f"SKIP_{CONFIG.SKIP_FIRST_N}_ALPHA_{CONFIG.ALPHA}-APPLY_EVERY_N_{CONFIG.APPLY_EVERY_N}-log.txt"
     logging.basicConfig(
-        filename=os.path.join(CONFIG.save_dir, f"{CONFIG.SKIP_FIRST_N}-{CONFIG.ALPHA}-{CONFIG.APPLY_EVERY_N}-log.txt"), 
+        filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 
         level=logging.INFO, 
         filemode='a'
