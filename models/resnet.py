@@ -24,6 +24,7 @@ def hook_activation_shaping(model: BaseResNet18, M: torch.Tensor, every_n_convol
     #Hook into the convolutional layers
     for i, layer in enumerate(all_layers):
         if i % every_n_convolution == 0 and i >= skip_first_n_layers:
+            #Get input size of layer
             layer.register_forward_hook(get_activation_shaping_hook(M))
 
 #TODO check that it works...
