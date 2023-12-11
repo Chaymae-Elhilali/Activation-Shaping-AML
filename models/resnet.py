@@ -15,7 +15,6 @@ class BaseResNet18(nn.Module):
 
 
 def hook_activation_shaping(model: BaseResNet18, generate_M, every_n_convolution=1, skip_first_n_layers=0):
-    #TODO: check if we'll need different M for each layer we apply the hook to
     #Make a list of all network convolutional layers to easily iterate over them
     all_layers = []
     output_size = 56
@@ -53,25 +52,3 @@ def get_activation_shaping_hook(M):
         return output
     return activation_shaping_hook
 
-
-
-######################################################
-# TODO: either define the Activation Shaping Module as a nn.Module
-#class ActivationShapingModule(nn.Module):
-#...
-#
-# OR as a function that shall be hooked via 'register_forward_hook'
-#def activation_shaping_hook(module, input, output):
-#...
-#
-######################################################
-# TODO: modify 'BaseResNet18' including the Activation Shaping Module
-#class ASHResNet18(nn.Module):
-#    def __init__(self):
-#        super(ASHResNet18, self).__init__()
-#        ...
-#    
-#    def forward(self, x):
-#        ...
-#
-######################################################
