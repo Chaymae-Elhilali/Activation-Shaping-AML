@@ -12,7 +12,7 @@ import numpy as np
 from parse_args import parse_arguments
 
 from dataset import PACS
-from models.resnet import BaseResNet18
+from models.resnet import BaseResNet18, hook_activation_shaping
 
 from globals import CONFIG
 
@@ -37,6 +37,8 @@ def evaluate(model, data):
     logging.info(f'Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
 
 
+DEBUG_TRAIN_EACH_TIME=True
+
 def train(model, data):
 
     # Create optimizers & schedulers
@@ -46,7 +48,8 @@ def train(model, data):
     
     # Load checkpoint (if it exists)
     cur_epoch = 0
-    if os.path.exists(os.path.join('record', CONFIG.experiment_name, 'last.pth')):
+    if not DEBUG_TRAIN_EACH_TIME and os.path.exists(os.path.join('record', CONFIG.experiment_name, 'last.pth')):
+        print("Reloading from saved state")
         checkpoint = torch.load(os.path.join('record', CONFIG.experiment_name, 'last.pth'))
         cur_epoch = checkpoint['epoch']
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -62,7 +65,7 @@ def train(model, data):
             # Compute loss
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
-                if CONFIG.experiment in ['baseline']:
+                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
                     #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
@@ -96,22 +99,39 @@ def train(model, data):
         }
         torch.save(checkpoint, os.path.join('record', CONFIG.experiment_name, 'last.pth'))
 
+"""
+ alpha: [0.1, 0.2, 0.3, 0.5, 0.8, 1] 6
+ SKIP_N: [0, 2, 6, 8, 10, 12, 14] 7
+ APPLY_EVERY_N: [0, 1, 3, 4] 4
+ 6 * 7 * 4 = 42 * 4 = 168
+"""
+
+ALPHA = 0.8
+APPLY_EVERY_N = 0
+SKIP_FIRST_N = 14
+
+def get_M_random_generator_function(alpha):
+  #Input: tensor size; output: random 
+  def M_random_generator(size):
+    M = torch.ones(size)
+    M = torch.where(torch.rand(size) <= alpha, M, torch.zeros(size))
+    M = M.to(CONFIG.device, non_blocking=False)
+    return M
+  return M_random_generator
+
 
 def main():
-    model = BaseResNet18()
-    print(model)
-    exit()
     # Load dataset
     data = PACS.load_data()
 
     # Load model
     if CONFIG.experiment in ['baseline']:
         model = BaseResNet18()
+    elif CONFIG.experiment in ['activation_shaping_experiments']:
+        model = BaseResNet18()
+        #Apply hooks
+        hook_activation_shaping(model, get_M_random_generator_function(ALPHA), APPLY_EVERY_N, SKIP_FIRST_N)
 
-    ######################################################
-    #elif... TODO: Add here model loading for the other experiments (eg. DA and optionally DG)
-
-    ######################################################
     
     model.to(CONFIG.device)
 
@@ -119,7 +139,6 @@ def main():
         train(model, data)
     else:
         evaluate(model, data['test'])
-    
 
 if __name__ == '__main__':
     warnings.filterwarnings('ignore', category=UserWarning)
@@ -134,7 +153,7 @@ if __name__ == '__main__':
 
     # Setup logging
     logging.basicConfig(
-        filename=os.path.join(CONFIG.save_dir, 'log.txt'), 
+        filename=os.path.join(CONFIG.save_dir, f"{SKIP_FIRST_N}-{ALPHA}-{APPLY_EVERY_N}-log.txt"), 
         format='%(message)s', 
         level=logging.INFO, 
         filemode='a'
