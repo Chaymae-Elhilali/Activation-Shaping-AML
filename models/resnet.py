@@ -29,7 +29,7 @@ def hook_activation_shaping(model: BaseResNet18, generate_M, every_n_convolution
     for i, layer in enumerate(all_layers):
         output_size = int((output_size + 2*layer.padding[0] - layer.kernel_size[0]) / layer.stride[0] + 1)
         
-        if (i >= skip_first_n_layers) and (every_n_convolution==0 or (i-skip_first_n_layers % every_n_convolution == 0)):
+        if (i >= skip_first_n_layers) and (every_n_convolution==0 or ((i-skip_first_n_layers) % every_n_convolution == 0)):
             M = generate_M([output_size,output_size])
             layer.register_forward_hook(get_activation_shaping_hook(M))
             n_applied += 1
