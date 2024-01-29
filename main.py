@@ -119,7 +119,6 @@ def main():
         model = BaseResNet18()
         #Apply hooks
         hook_activation_shaping(model, get_M_random_generator_function(CONFIG.ALPHA), CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
-
     
     model.to(CONFIG.device)
 
