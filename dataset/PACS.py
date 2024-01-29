@@ -30,7 +30,8 @@ def load_data():
 
     # Load examples & create Dataset
     if CONFIG.experiment in ['baseline', 'activation_shaping_experiments']:
-        source_examples, target_examples = [], []
+        source_examples = []
+        test_dataset = {}
 
         # Load source
         with open(os.path.join(CONFIG.dataset_args['root'], f"{CONFIG.dataset_args['source_domain']}.txt"), 'r') as f:
@@ -41,21 +42,17 @@ def load_data():
             source_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
 
         # Load target
-        with open(os.path.join(CONFIG.dataset_args['root'], f"{CONFIG.dataset_args['target_domain']}.txt"), 'r') as f:
-            lines = f.readlines()
-        for line in lines:
-            line = line.strip().split()
-            path, label = line[0].split('/')[1:], int(line[1])
-            target_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+        for target_domain in CONFIG.dataset_args['target_domain']:
+            target_examples = []
+            with open(os.path.join(CONFIG.dataset_args['root'], f"{target_domain}.txt"), 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                line = line.strip().split()
+                path, label = line[0].split('/')[1:], int(line[1])
+                target_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+            test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = BaseDataset(source_examples, transform=train_transform)
-        test_dataset = BaseDataset(target_examples, transform=test_transform)
-
-    ######################################################
-    #elif... TODO: Add here how to create the Dataset object for the other experiments
-
-
-    ######################################################
 
     # Dataloaders
     train_loader = SeededDataLoader(
@@ -66,14 +63,16 @@ def load_data():
         pin_memory=True,
         persistent_workers=True
     )
+    test_loaders = {}
+    
+    for target_domain in CONFIG.dataset_args['target_domain']:
+        test_loaders[target_domain] = SeededDataLoader(
+            test_dataset[target_domain],
+            batch_size=CONFIG.batch_size,
+            shuffle=False,
+            num_workers=CONFIG.num_workers,
+            pin_memory=True,
+            persistent_workers=True
+        )
 
-    test_loader = SeededDataLoader(
-        test_dataset,
-        batch_size=CONFIG.batch_size,
-        shuffle=False,
-        num_workers=CONFIG.num_workers,
-        pin_memory=True,
-        persistent_workers=True
-    )
-
-    return {'train': train_loader, 'test': test_loader}
+    return {'train': train_loader, 'test': test_loaders}

@@ -19,22 +19,21 @@ from globals import CONFIG
 @torch.no_grad()
 def evaluate(model, data):
     model.eval()
-    
-    acc_meter = Accuracy(task='multiclass', num_classes=CONFIG.num_classes)
-    acc_meter = acc_meter.to(CONFIG.device)
-
-    loss = [0.0, 0]
-    for x, y in tqdm(data):
-        with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
-            x, y = x.to(CONFIG.device), y.to(CONFIG.device)
-            logits = model(x)
-            acc_meter.update(logits, y)
-            loss[0] += F.cross_entropy(logits, y).item()
-            loss[1] += x.size(0)
-    
-    accuracy = acc_meter.compute()
-    loss = loss[0] / loss[1]
-    logging.info(f'Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
+    for target_domain in data.keys():
+        acc_meter = Accuracy(task='multiclass', num_classes=CONFIG.num_classes)
+        acc_meter = acc_meter.to(CONFIG.device)
+        loss = [0.0, 0]
+        for x, y in tqdm(data[target_domain]):
+            with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
+                x, y = x.to(CONFIG.device), y.to(CONFIG.device)
+                logits = model(x)
+                acc_meter.update(logits, y)
+                loss[0] += F.cross_entropy(logits, y).item()
+                loss[1] += x.size(0)
+        
+        accuracy = acc_meter.compute()
+        loss = loss[0] / loss[1]
+        logging.info(f'{target_domain}: Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
 
 
 DEBUG_TRAIN_EACH_TIME=True
@@ -138,7 +137,9 @@ if __name__ == '__main__':
       CONFIG.SKIP_FIRST_N = CONFIG.dataset_args["SKIP_FIRST_N"]
     if ("APPLY_EVERY_N" in CONFIG.dataset_args):
       CONFIG.APPLY_EVERY_N = CONFIG.dataset_args["APPLY_EVERY_N"]
-
+    #target domain: if set, transform it in a list separated by comma
+    if ("target_domain" in CONFIG.dataset_args and CONFIG.dataset_args["target_domain"] != ""):
+      CONFIG.dataset_args["target_domain"] = CONFIG.dataset_args["target_domain"].replace(" ", "").split(',')
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)
     os.makedirs(CONFIG.save_dir, exist_ok=True)
