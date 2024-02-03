@@ -18,7 +18,7 @@ from models.resnet_domain_adaptation import *
 from globals import CONFIG
 
 @torch.no_grad()
-def evaluate(model, data):
+def evaluate(model, data, extra_str=""):
     model.eval()
     for target_domain in data.keys():
         acc_meter = Accuracy(task='multiclass', num_classes=CONFIG.num_classes)
@@ -34,7 +34,7 @@ def evaluate(model, data):
         
         accuracy = acc_meter.compute()
         loss = loss[0] / loss[1]
-        logging.info(f'Evaluate: {target_domain}: Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
+        logging.info(f'{extra_str}Evaluate: {target_domain}: Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
 
 
 DEBUG_TRAIN_EACH_TIME=True
@@ -64,40 +64,38 @@ def train(model, data):
             # Compute loss
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
-                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments', 'test_temp_1'] :
+                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
                     #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                     loss = F.cross_entropy(model(x), y) #cross entropy
                 elif CONFIG.experiment in ['domain_adaptation']:
+                    x, y, target_x = batch
+                    x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
                     #If domain adaptation, must run model twice
                     model.state = DomainAdaptationMode.RECORD
-                    #Get target_ds as a random sample from the target dataset
-                    target_ds = random.sample(data['test'][CONFIG.dataset_args["target_domain"][0]], len(batch))
-                    print(batch.shape, target_ds.shape)
-                    exit()
-                    _ = model(target_ds)
+                    _ = model(target_x)
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
                     
-
-
             # Optimization step
             scaler.scale(loss / CONFIG.grad_accum_steps).backward()
-
             if ((batch_idx + 1) % CONFIG.grad_accum_steps == 0) or (batch_idx + 1 == len(data['train'])):
                 scaler.step(optimizer)
                 optimizer.zero_grad(set_to_none=True)
                 scaler.update()
 
         scheduler.step()
-        
         # Test current epoch
         logging.info(f'[TEST @ Epoch={epoch}]')
         #If experiment is domain adaptation must set model in test mode:
         if (CONFIG.experiment in ['domain_adaptation']):
             model.state = DomainAdaptationMode.TEST
-        evaluate(model, data['test'])
+            evaluate(model, data['test'], extra_str="TEST SIMPLE ")
+            model.state = DomainAdaptationMode.TEST_BINARIZE
+            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+        else:
+            evaluate(model, data['test'])
 
         # Save checkpoint
         checkpoint = {

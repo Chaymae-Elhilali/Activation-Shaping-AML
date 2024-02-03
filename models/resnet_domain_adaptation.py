@@ -9,6 +9,7 @@ class DomainAdaptationMode:
     RECORD = 0
     APPLY = 1
     TEST = 2
+    TEST_BINARIZE = 3
 #Define a class for the RECORD mode's rule for generating M: by threshold or by top-k
 class RecordModeRule:
     THRESHOLD = 0
@@ -21,16 +22,29 @@ def get_domain_adaptation_hook(model, i):
                 if (model.record_mode == RecordModeRule.THRESHOLD):
                     binarized_output = torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
                     model.M[i] = binarized_output
+                    #print(f"Recorded M[{i}] - {output.shape} - {model.M[i].shape}")
                 else:
                     #If the record mode is by top-k, we record the top-k
                     _, top_k_indices = torch.topk(output, model.K, dim=1)
                     binarized_output = torch.zeros_like(output)
                     binarized_output.scatter_(1, top_k_indices, 1)
                     model.M[i] = binarized_output
-            else:
+            elif (model.state == DomainAdaptationMode.APPLY):
                 #In APPLY mode, apply M as in the previous versions
+                #print(f"Activate M[{i}] - {output.shape} - {model.M[i].shape}")
                 activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
                 output = torch.mul(activation, model.M[i])
+            elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
+                #In TEST mode we binarize the output similarly to the RECORD mode but without saving it
+                if (model.record_mode == RecordModeRule.THRESHOLD):
+                    binarized_output = torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
+                    output = binarized_output
+                else:
+                    #If the record mode is by top-k, we record the top-k
+                    _, top_k_indices = torch.topk(output, model.K, dim=1)
+                    binarized_output = torch.zeros_like(output)
+                    binarized_output.scatter_(1, top_k_indices, 1)
+                    output = binarized_output
             return output
         return activation_shaping_hook
 
@@ -39,7 +53,7 @@ class ResNet18ForDomainAdaptation(nn.Module):
         super(ResNet18ForDomainAdaptation, self).__init__()
         self.resnet = resnet18(weights=ResNet18_Weights)
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 7)
-        
+        self.record_mode = record_mode
         self.K = K
         #This net has a state: RECORD if it is recording the activations, APPLY if it is applying the activations
         self.state = DomainAdaptationMode.RECORD

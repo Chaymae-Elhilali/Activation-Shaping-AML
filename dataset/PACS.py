@@ -1,7 +1,7 @@
 import torch
 import os
 import torchvision.transforms as T
-from dataset.utils import BaseDataset #, DomainAdaptationDataset, DomainGeneralizationDataset
+from dataset.utils import BaseDataset, DomainAdaptationDataset #, DomainAdaptationDataset, DomainGeneralizationDataset
 from dataset.utils import SeededDataLoader
 
 from globals import CONFIG
@@ -29,7 +29,7 @@ def load_data():
     test_transform = get_transform(size=224, mean=mean, std=std, preprocess=False)
 
     # Load examples & create Dataset
-    if CONFIG.experiment in ['baseline', 'activation_shaping_experiments', 'domain_adaptation']:
+    if CONFIG.experiment in ['baseline', 'activation_shaping_experiments']:
         source_examples = []
         test_dataset = {}
 
@@ -53,6 +53,31 @@ def load_data():
             test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = BaseDataset(source_examples, transform=train_transform)
+    elif CONFIG.experiment in ['domain_adaptation']:
+        source_examples = []
+        test_dataset = {}
+
+        # Load source
+        with open(os.path.join(CONFIG.dataset_args['root'], f"{CONFIG.dataset_args['source_domain']}.txt"), 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.strip().split()
+            path, label = line[0].split('/')[1:], int(line[1])
+            source_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+
+        # Load target
+        for target_domain in CONFIG.dataset_args['target_domain']:
+            target_examples = []
+            with open(os.path.join(CONFIG.dataset_args['root'], f"{target_domain}.txt"), 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                line = line.strip().split()
+                path, label = line[0].split('/')[1:], int(line[1])
+                target_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+            test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
+
+        train_dataset = DomainAdaptationDataset(source_examples, target_examples, transform=train_transform)
+
 
     # Dataloaders
     train_loader = SeededDataLoader(
