@@ -13,6 +13,7 @@ from parse_args import parse_arguments
 
 from dataset import PACS
 from models.resnet import BaseResNet18, hook_activation_shaping
+from models.resnet_domain_adaptation import *
 
 from globals import CONFIG
 
@@ -33,7 +34,7 @@ def evaluate(model, data):
         
         accuracy = acc_meter.compute()
         loss = loss[0] / loss[1]
-        logging.info(f'{target_domain}: Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
+        logging.info(f'Evaluate: {target_domain}: Accuracy: {100 * accuracy:.2f} - Loss: {loss}')
 
 
 DEBUG_TRAIN_EACH_TIME=True
@@ -63,16 +64,23 @@ def train(model, data):
             # Compute loss
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
-                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
+                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments', 'test_temp_1'] :
                     #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                     loss = F.cross_entropy(model(x), y) #cross entropy
+                elif CONFIG.experiment in ['domain_adaptation']:
+                    #If domain adaptation, must run model twice
+                    model.state = DomainAdaptationMode.RECORD
+                    #Get target_ds as a random sample from the target dataset
+                    target_ds = random.sample(data['test'][CONFIG.dataset_args["target_domain"][0]], len(batch))
+                    print(batch.shape, target_ds.shape)
+                    exit()
+                    _ = model(target_ds)
+                    model.state = DomainAdaptationMode.APPLY
+                    loss = F.cross_entropy(model(x), y)
+                    
 
-                ######################################################
-                #elif... TODO: Add here train logic for the other experiments
-
-                ######################################################
 
             # Optimization step
             scaler.scale(loss / CONFIG.grad_accum_steps).backward()
@@ -86,6 +94,9 @@ def train(model, data):
         
         # Test current epoch
         logging.info(f'[TEST @ Epoch={epoch}]')
+        #If experiment is domain adaptation must set model in test mode:
+        if (CONFIG.experiment in ['domain_adaptation']):
+            model.state = DomainAdaptationMode.TEST
         evaluate(model, data['test'])
 
         # Save checkpoint
@@ -118,7 +129,21 @@ def main():
         model = BaseResNet18()
         #Apply hooks
         hook_activation_shaping(model, get_M_random_generator_function(CONFIG.ALPHA), CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
-    
+    elif CONFIG.experiment in ['domain_adaptation']:
+        #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
+        assert len(CONFIG.dataset_args["target_domain"])==1
+        assert not CONFIG.test_only
+        #IF CONFIG.RECORD_MODE = "threshold", use threshold, if = "topk" use topK 
+        if CONFIG.RECORD_MODE == "threshold":
+            record_mode = RecordModeRule.THRESHOLD
+        elif CONFIG.RECORD_MODE == "topk":
+            record_mode = RecordModeRule.TOP_K
+        else:
+            exit("RECORD_MODE must be either topk or threshold")
+
+        model = ResNet18ForDomainAdaptation(record_mode, CONFIG.K, CONFIG.SKIP_FIRST_N, CONFIG.APPLY_EVERY_N)
+
+
     model.to(CONFIG.device)
 
     if not CONFIG.test_only:
@@ -137,9 +162,14 @@ if __name__ == '__main__':
       CONFIG.SKIP_FIRST_N = CONFIG.dataset_args["SKIP_FIRST_N"]
     if ("APPLY_EVERY_N" in CONFIG.dataset_args):
       CONFIG.APPLY_EVERY_N = CONFIG.dataset_args["APPLY_EVERY_N"]
+    if ("RECORD_MODE" in CONFIG.dataset_args):
+      CONFIG.RECORD_MODE = CONFIG.dataset_args["RECORD_MODE"]
+    if ("K" in CONFIG.dataset_args):
+      CONFIG.K = CONFIG.dataset_args["K"]
     #target domain: if set, transform it in a list separated by comma
     if ("target_domain" in CONFIG.dataset_args and CONFIG.dataset_args["target_domain"] != ""):
       CONFIG.dataset_args["target_domain"] = CONFIG.dataset_args["target_domain"].replace(" ", "").split(',')
+      
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)
     os.makedirs(CONFIG.save_dir, exist_ok=True)
