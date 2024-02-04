@@ -24,10 +24,6 @@ class BaseDataset(Dataset):
         y = torch.tensor(y).long()
         return x, y
 
-
-######################################################
-# TODO: modify 'BaseDataset' for the Domain Adaptation setting.
-# Hint: randomly sample 'target_examples' to obtain targ_x
 class DomainAdaptationDataset(Dataset):
     def __init__(self, source_examples, target_examples, transform):
         self.source_examples = source_examples
@@ -48,23 +44,51 @@ class DomainAdaptationDataset(Dataset):
         targ_x = self.T(targ_x).to(CONFIG.dtype)
         return x, y, targ_x
 
-# [OPTIONAL] TODO: modify 'BaseDataset' for the Domain Generalization setting. 
-# Hint: combine the examples from the 3 source domains into a single 'examples' list
-#class DomainGeneralizationDataset(Dataset):
-#    def __init__(self, examples, transform):
-#        self.examples = examples
-#        self.T = transform
-#    
-#    def __len__(self):
-#        return len(self.examples)
-#    
-#    def __getitem__(self, index):
-#        x1, x2, x3 = self.examples[index]
-#        x1, x2, x3 = self.T(x1), self.T(x2), self.T(x3)
-#        targ_x = self.T(targ_x)
-#        return x1, x2, x3
+"""
+DomainGeneralizationDataset is required to return a set of examples from != domains with the constraint that they must
+belong to the same class.
+This is complicated by the fact that != domains have != dataset sizes.
+Moreover, it might be useful to shuffle the examples from epoch to epoch, so instances aren't always paired to the same others.
+And we also don't want to "waste" examples from the bigger domains.
+So the class works as follow:
+In the constructor it receives an array with one dictionary for each domain.
+The dictionary is as follow: { label: [example1, .. example 2] }
+#The method shuffle_examples creates the list of pairs: [(example_dom_1, example_dom_2, .., label), ..]
+the getitem method returns one of these pairs.
+At the end of each epoch, the shuffle_examples method can be called to re-shuffle examples
+It is not mandatory but it is useful to avoid always pairing the same examples.
+"""
+class DomainGeneralizationDataset(Dataset):
+    def __init__(self, examples, transform):
+        self.examples = examples
+        self.shuffle_examples()
+        self.T = transform
 
-######################################################
+    def shuffle_examples(self):
+        labels = list(self.examples[0].keys())
+        examples = []
+        for label in labels:
+            examples_by_domain = [x[label] for x in self.examples]
+            for e in examples_by_domain:
+                random.shuffle(e)
+            #Get the minimum length
+            min_len = min([len(x) for x in examples_by_domain])
+            for i in range(min_len):
+                examples.append([x[i][0] for x in examples_by_domain] + [label])
+        random.shuffle(examples)
+        self.shuffled_examples = examples
+    
+    def __len__(self):
+        return len(self.shuffled_examples)
+    
+    def __getitem__(self, index):
+        examples = self.shuffled_examples[index]
+        x = [self.T(Image.open(x).convert('RGB')) for x in examples[:-1]]
+        y = examples[-1]
+        y = torch.tensor(y).long()
+        x.append(y)
+        return x
+
 
 class SeededDataLoader(DataLoader):
     def __init__(self, dataset: Dataset, batch_size=1, shuffle=None, 

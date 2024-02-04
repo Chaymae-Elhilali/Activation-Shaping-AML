@@ -14,6 +14,7 @@ from parse_args import parse_arguments
 from dataset import PACS
 from models.resnet import BaseResNet18, hook_activation_shaping
 from models.resnet_domain_adaptation import *
+from models.resnet_domain_adaptation_extension import *
 
 from globals import CONFIG
 
@@ -77,6 +78,26 @@ def train(model, data):
                     _ = model(target_x)
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
+                elif CONFIG.experiment in ['domain_generalization']:
+                    x1, x2, x3, y = batch
+                    x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
+                    #Record the activation matrices for x1, x2, x3
+                    model.state = DomainAdaptationMode.RECORD
+                    model.reset_M()
+                    _ = model(x1)
+                    _ = model(x2)
+                    _ = model(x3)
+                    #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
+                    #Concatenate x1,x2,x3 in the first dimension
+                    x = torch.cat((x1, x2, x3), 0)
+                    y = torch.cat((y, y, y), 0)
+                    #The matrices M must be extended to match the new batch size
+                    model.extend_M_for_bigger_batch(3)
+                    #This is equivalent to running the model many time with minibatches but should be faster
+                    model.state = DomainAdaptationMode.APPLY
+                    loss = F.cross_entropy(model(x), y)
+
+
                     
             # Optimization step
             scaler.scale(loss / CONFIG.grad_accum_steps).backward()
@@ -96,6 +117,9 @@ def train(model, data):
             evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         else:
             evaluate(model, data['test'])
+        
+        if (CONFIG.experiment in ['domain_generalization']):
+            data["train"].dataset.shuffle_examples()
 
         # Save checkpoint
         checkpoint = {
@@ -140,6 +164,20 @@ def main():
             exit("RECORD_MODE must be either topk or threshold")
 
         model = ResNet18ForDomainAdaptation(record_mode, CONFIG.K, CONFIG.SKIP_FIRST_N, CONFIG.APPLY_EVERY_N)
+    elif CONFIG.experiment in ['domain_generalization']:
+        #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
+        assert len(CONFIG.dataset_args["target_domain"])==1
+        assert len(CONFIG.dataset_args["source_domain"])==3
+        assert not CONFIG.test_only
+        #IF CONFIG.RECORD_MODE = "threshold", use threshold, if = "topk" use topK 
+        if CONFIG.RECORD_MODE == "threshold":
+            record_mode = RecordModeRule.THRESHOLD
+        elif CONFIG.RECORD_MODE == "topk":
+            record_mode = RecordModeRule.TOP_K
+        else:
+            exit("RECORD_MODE must be either topk or threshold")
+
+        model = ResNet18ForDomainAdaptationExtension(record_mode, CONFIG.K, CONFIG.SKIP_FIRST_N, CONFIG.APPLY_EVERY_N)
 
 
     model.to(CONFIG.device)
@@ -167,6 +205,9 @@ if __name__ == '__main__':
     #target domain: if set, transform it in a list separated by comma
     if ("target_domain" in CONFIG.dataset_args and CONFIG.dataset_args["target_domain"] != ""):
       CONFIG.dataset_args["target_domain"] = CONFIG.dataset_args["target_domain"].replace(" ", "").split(',')
+    if (CONFIG.experiment == "domain_generalization"):
+        CONFIG.dataset_args["source_domain"] = ["art_painting","cartoon","photo","sketch"]
+        CONFIG.dataset_args["source_domain"].remove(CONFIG.dataset_args["target_domain"][0])
       
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)

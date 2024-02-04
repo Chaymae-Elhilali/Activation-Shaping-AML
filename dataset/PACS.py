@@ -1,7 +1,7 @@
 import torch
 import os
 import torchvision.transforms as T
-from dataset.utils import BaseDataset, DomainAdaptationDataset #, DomainAdaptationDataset, DomainGeneralizationDataset
+from dataset.utils import BaseDataset, DomainAdaptationDataset, DomainGeneralizationDataset #, DomainAdaptationDataset, DomainGeneralizationDataset
 from dataset.utils import SeededDataLoader
 
 from globals import CONFIG
@@ -77,6 +77,36 @@ def load_data():
             test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = DomainAdaptationDataset(source_examples, target_examples, transform=train_transform)
+    elif CONFIG.experiment in ['domain_generalization']:
+        source_examples = []
+        test_dataset = {}
+
+        #Here there are multiple source domains
+        source_examples = []
+        for source_domain in CONFIG.dataset_args['source_domain']:
+            domain_examples = {}
+            with open(os.path.join(CONFIG.dataset_args['root'], f"{source_domain}.txt"), 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                line = line.strip().split()
+                path, label = line[0].split('/')[1:], int(line[1])
+                if (label not in domain_examples):
+                    domain_examples[label] = []
+                domain_examples[label].append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+            source_examples.append(domain_examples)
+        
+        train_dataset = DomainGeneralizationDataset(source_examples, transform=train_transform)
+
+        # Load target
+        for target_domain in CONFIG.dataset_args['target_domain']:
+            target_examples = []
+            with open(os.path.join(CONFIG.dataset_args['root'], f"{target_domain}.txt"), 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                line = line.strip().split()
+                path, label = line[0].split('/')[1:], int(line[1])
+                target_examples.append((os.path.join(CONFIG.dataset_args['root'], *path), label))
+            test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
 
     # Dataloaders
