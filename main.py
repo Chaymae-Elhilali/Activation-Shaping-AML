@@ -175,6 +175,8 @@ if __name__ == '__main__':
     LOG_FILENAME = "log.txt"
     if (CONFIG.experiment == "activation_shaping_experiments"):
       LOG_FILENAME = f"SKIP_{CONFIG.SKIP_FIRST_N}_ALPHA_{CONFIG.ALPHA}-APPLY_EVERY_N_{CONFIG.APPLY_EVERY_N}-log.txt"
+    elif (CONFIG.experiment == "domain_adaptation"):
+      LOG_FILENAME = f"SKIP_{CONFIG.SKIP_FIRST_N}_K_{CONFIG.K}-APPLY_EVERY_N_{CONFIG.APPLY_EVERY_N}-RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"
     logging.basicConfig(
         filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 

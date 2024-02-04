@@ -10,41 +10,46 @@ class DomainAdaptationMode:
     APPLY = 1
     TEST = 2
     TEST_BINARIZE = 3
+
 #Define a class for the RECORD mode's rule for generating M: by threshold or by top-k
 class RecordModeRule:
-    THRESHOLD = 0
-    TOP_K = 1
+    def THRESHOLD(model, output):
+        return torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
+    def TOP_K(model, output):
+        #If the record mode is by top-k, we record the top-k
+        #Matrix Output has 4 dimensions: batch_size, filters, height, width
+        #Can apply best-k independently for each filter or for whole output
+        #For now, we apply best-k for each filter
+        #Reshape the output to 2D: batch_size*filters, height*width
+        K = int(model.K * (output.shape[2] * output.shape[3]))
+        reshaped_output = output.view(output.shape[0]*output.shape[1], -1)
+        #Get the top-k indices
+        _, top_k_indices = torch.topk(reshaped_output, K, dim=1)
+        #Create a 2D tensor with zeros
+        binarized_output = torch.zeros_like(reshaped_output)
+        #Set the top-k indices to 1
+        binarized_output.scatter_(1, top_k_indices, 1)
+        #Reshape the output back to 4D
+        return binarized_output.view(output.shape)
 
 def get_domain_adaptation_hook(model, i):
         def activation_shaping_hook(module, input, output):
+
+            #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
-                #In RECORD mode, we record the activations
-                if (model.record_mode == RecordModeRule.THRESHOLD):
-                    binarized_output = torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
-                    model.M[i] = binarized_output
-                    #print(f"Recorded M[{i}] - {output.shape} - {model.M[i].shape}")
-                else:
-                    #If the record mode is by top-k, we record the top-k
-                    _, top_k_indices = torch.topk(output, model.K, dim=1)
-                    binarized_output = torch.zeros_like(output)
-                    binarized_output.scatter_(1, top_k_indices, 1)
-                    model.M[i] = binarized_output
+                model.M[i] = model.record_mode(model, output)
+
+            #Apply mode: apply M as in the previous versions   
             elif (model.state == DomainAdaptationMode.APPLY):
-                #In APPLY mode, apply M as in the previous versions
-                #print(f"Activate M[{i}] - {output.shape} - {model.M[i].shape}")
-                activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
+                activation = model.record_mode(model, output)
                 output = torch.mul(activation, model.M[i])
+            
+            #TEST_BINARIZE mode: binarize the output using the chosen record_mode function
             elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
-                #In TEST mode we binarize the output similarly to the RECORD mode but without saving it
-                if (model.record_mode == RecordModeRule.THRESHOLD):
-                    binarized_output = torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
-                    output = binarized_output
-                else:
-                    #If the record mode is by top-k, we record the top-k
-                    _, top_k_indices = torch.topk(output, model.K, dim=1)
-                    binarized_output = torch.zeros_like(output)
-                    binarized_output.scatter_(1, top_k_indices, 1)
-                    output = binarized_output
+                output = model.record_mode(model, output)
+            
+            #In TEST mode, do nothing
+                
             return output
         return activation_shaping_hook
 
