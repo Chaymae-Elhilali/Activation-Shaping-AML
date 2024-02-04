@@ -59,9 +59,7 @@ def train(model, data):
     # Optimization loop
     for epoch in range(cur_epoch, CONFIG.epochs):
         model.train()
-        
         for batch_idx, batch in enumerate(tqdm(data['train'])):
-            
             # Compute loss
             with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
 
@@ -87,6 +85,7 @@ def train(model, data):
                     _ = model(x1)
                     _ = model(x2)
                     _ = model(x3)
+
                     #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
                     #Concatenate x1,x2,x3 in the first dimension
                     x = torch.cat((x1, x2, x3), 0)
@@ -96,7 +95,6 @@ def train(model, data):
                     #This is equivalent to running the model many time with minibatches but should be faster
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
-
 
                     
             # Optimization step
@@ -115,12 +113,16 @@ def train(model, data):
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
             model.state = DomainAdaptationMode.TEST_BINARIZE
             evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+        elif (CONFIG.experiment in ['domain_generalization']):
+            model.state = DomainAdaptationMode.TEST
+            evaluate(model, data['test'], extra_str="TEST SIMPLE ")
+            model.state = DomainAdaptationMode.TEST_BINARIZE
+            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         else:
             evaluate(model, data['test'])
         
-        if (CONFIG.experiment in ['domain_generalization']):
-            data["train"].dataset.shuffle_examples()
-
+        #if (CONFIG.experiment in ['domain_generalization']):
+        #    data["train"].dataset.shuffle_examples()
         # Save checkpoint
         checkpoint = {
             'epoch': epoch + 1,
@@ -208,6 +210,7 @@ if __name__ == '__main__':
     if (CONFIG.experiment == "domain_generalization"):
         CONFIG.dataset_args["source_domain"] = ["art_painting","cartoon","photo","sketch"]
         CONFIG.dataset_args["source_domain"].remove(CONFIG.dataset_args["target_domain"][0])
+        CONFIG.batch_size = int(CONFIG.batch_size/3)
       
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)

@@ -60,34 +60,32 @@ It is not mandatory but it is useful to avoid always pairing the same examples.
 """
 class DomainGeneralizationDataset(Dataset):
     def __init__(self, examples, transform):
-        self.examples = examples
-        self.shuffle_examples()
+        self.examples = DomainGeneralizationDataset.build_examples(examples)
         self.T = transform
 
-    def shuffle_examples(self):
-        labels = list(self.examples[0].keys())
-        examples = []
+    def build_examples(examples):
+        labels = list(examples[0].keys())
+        new_examples = []
         for label in labels:
-            examples_by_domain = [x[label] for x in self.examples]
+            examples_by_domain = [x[label] for x in examples]
             for e in examples_by_domain:
                 random.shuffle(e)
             #Get the minimum length
             min_len = min([len(x) for x in examples_by_domain])
             for i in range(min_len):
-                examples.append([x[i][0] for x in examples_by_domain] + [label])
-        random.shuffle(examples)
-        self.shuffled_examples = examples
+                new_examples.append([x[i][0] for x in examples_by_domain] + [label])
+        random.shuffle(new_examples)
+        return new_examples
     
     def __len__(self):
-        return len(self.shuffled_examples)
+        return len(self.examples)
     
     def __getitem__(self, index):
-        examples = self.shuffled_examples[index]
+        examples = self.examples[index]
         x = [self.T(Image.open(x).convert('RGB')) for x in examples[:-1]]
         y = examples[-1]
         y = torch.tensor(y).long()
-        x.append(y)
-        return x
+        return x + [y]
 
 
 class SeededDataLoader(DataLoader):
