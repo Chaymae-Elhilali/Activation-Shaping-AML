@@ -15,6 +15,7 @@ class DomainAdaptationMode:
 class RecordModeRule:
     def THRESHOLD(model, output):
         return torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
+    
     def TOP_K(model, output):
         #If the record mode is by top-k, we record the top-k
         #Matrix Output has 4 dimensions: batch_size, filters, height, width
@@ -38,6 +39,7 @@ def get_domain_adaptation_hook(model, i):
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
                 model.M[i] = model.record_mode(model, output)
+                #output again is (BATCH_SIZE, FILTERS, HEIGHT, WIDTH)
 
             #Apply mode: apply M as in the previous versions   
             elif (model.state == DomainAdaptationMode.APPLY):

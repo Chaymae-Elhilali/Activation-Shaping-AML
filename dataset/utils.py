@@ -67,14 +67,18 @@ class DomainGeneralizationDataset(Dataset):
         labels = list(examples[0].keys())
         new_examples = []
         for label in labels:
+            #List of examples for each domain
             examples_by_domain = [x[label] for x in examples]
             for e in examples_by_domain:
                 random.shuffle(e)
             #Get the minimum length
+            #TODO: instead of keeping the minimum, replicate examples from smaller domains!
             min_len = min([len(x) for x in examples_by_domain])
             for i in range(min_len):
                 new_examples.append([x[i][0] for x in examples_by_domain] + [label])
         random.shuffle(new_examples)
+        #Each element in new_examples is a list, with 3 examples w.t. same label and one label
+        #(ex_1, ex_2, ex_3, label)
         return new_examples
     
     def __len__(self):

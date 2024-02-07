@@ -90,6 +90,7 @@ def train(model, data):
                     #Concatenate x1,x2,x3 in the first dimension
                     x = torch.cat((x1, x2, x3), 0)
                     y = torch.cat((y, y, y), 0)
+
                     #The matrices M must be extended to match the new batch size
                     model.extend_M_for_bigger_batch(3)
                     #This is equivalent to running the model many time with minibatches but should be faster
@@ -132,14 +133,6 @@ def train(model, data):
         }
         torch.save(checkpoint, os.path.join('record', CONFIG.experiment_name, 'last.pth'))
 
-def get_M_random_generator_function(alpha):
-  #Input: tensor size; output: random 
-  def M_random_generator(size):
-    M = torch.ones(size)
-    M = torch.where(torch.rand(size) <= alpha, M, torch.zeros(size))
-    M = M.to(CONFIG.device, non_blocking=False)
-    return M
-  return M_random_generator
 
 
 def main():
@@ -152,7 +145,7 @@ def main():
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
-        hook_activation_shaping(model, get_M_random_generator_function(CONFIG.ALPHA), CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
+        hook_activation_shaping(model, CONFIG.ALPHA, CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
     elif CONFIG.experiment in ['domain_adaptation']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1

@@ -81,9 +81,10 @@ def load_data():
         source_examples = []
         test_dataset = {}
 
-        #Here there are multiple source domains
+        #Here there are multiple source domains - source_examples is a list, one element for each source domain
         source_examples = []
         for source_domain in CONFIG.dataset_args['source_domain']:
+            #Source domain examples are kept in a dictionary, with the label as key
             domain_examples = {}
             with open(os.path.join(CONFIG.dataset_args['root'], f"{source_domain}.txt"), 'r') as f:
                 lines = f.readlines()
@@ -92,6 +93,7 @@ def load_data():
                 path, label = line[0].split('/')[1:], int(line[1])
                 if (label not in domain_examples):
                     domain_examples[label] = []
+                
                 domain_examples[label].append((os.path.join(CONFIG.dataset_args['root'], *path), label))
             source_examples.append(domain_examples)
         

@@ -10,13 +10,19 @@ def get_domain_adaptation_hook(model, i):
 
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
-                model.M[i].append(model.record_mode(model, output))
+                M = model.record_mode(model, output)
+                #To handle the different Mi, we can simply multiply the new M with the product of all the previous
+                #or just set model.M[i] = M if it's the first
+                if model.M[i] is None:
+                    model.M[i] = M
+                else:
+                    model.M[i] = torch.mul(model.M[i], M)
 
             #Apply mode: apply M as in the previous versions   
             elif (model.state == DomainAdaptationMode.APPLY):
                 activation = model.record_mode(model, output)
-                for m in model.M[i]:
-                    activation = torch.mul(activation, m)
+                #model.M[i] is already the product of all the Mi
+                activation = torch.mul(activation, model.M[i])
                 output = activation
             
             #TEST_BINARIZE mode: binarize the output using the chosen record_mode function
@@ -55,18 +61,17 @@ class ResNet18ForDomainAdaptationExtension(nn.Module):
                 n_applied += 1
         
         #Use an array to keep last generated M
-        self.M = [[] for _ in range(n_applied)]
+        self.M = [None for _ in range(n_applied)]
 
     def forward(self, x):
         return self.resnet(x)
 
     def reset_M(self):
         for i in range(len(self.M)):
-            self.M[i] = []
+            self.M[i] = None
     
     def extend_M_for_bigger_batch(self, multiply_factor):
         #For each m in M, and for each matrix in m, extend it by multiply_factor over dimension 0 (batch size)
         for i in range(len(self.M)):
-            for j in range(len(self.M[i])):
-                self.M[i][j] = torch.cat([self.M[i][j]]*multiply_factor, dim=0)
+            self.M[i] = torch.cat([self.M[i]]*multiply_factor, dim=0)
         
