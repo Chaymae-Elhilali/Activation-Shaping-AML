@@ -18,17 +18,16 @@ class BaseResNet18(nn.Module):
             handle.remove()
     
     def enable_hooks(self):
-        for layer in self.layers_with_hooks:
-            layer.register_forward_hook(self.hook_fun)
+        for index, layer in enumerate(self.layers_with_hooks):
+            self.hook_handles[index] = layer.register_forward_hook(self.hook_fun)
 
 
     def hook_activation_shaping(self, alpha=0.5, every_n_convolution=1, skip_first_n_layers=0):
         
         def M_random_generator(shape, alpha):
             #Generate a random matrix M with values 0 or 1
-            M = torch.ones(shape)
-            M = torch.where(torch.rand(shape) <= alpha, M, torch.zeros(shape))
-            M = M.to(CONFIG.device, non_blocking=False)
+            M = torch.ones(shape, device='cuda:0')
+            M = torch.where(torch.rand(shape, device='cuda:0') <= alpha, M, torch.zeros(shape, device='cuda:0')).to(CONFIG.device)
             return M
 
         #Get activation shaping hook returns a function that can be used as a hook while containing the M matrix
