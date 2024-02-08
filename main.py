@@ -119,6 +119,11 @@ def train(model, data):
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
             model.state = DomainAdaptationMode.TEST_BINARIZE
             evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+        elif (CONFIG.experiment in ['activation_shaping_experiments']):
+            evaluate(model, data['test'], extra_str="TEST WITH BINARIZATION ")
+            model.disable_hooks()
+            evaluate(model, data['test'], extra_str="TEST WITHOUT BINARIZATION ")
+            model.enable_hooks()
         else:
             evaluate(model, data['test'])
         
@@ -145,7 +150,8 @@ def main():
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
-        hook_activation_shaping(model, CONFIG.ALPHA, CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
+        model.hook_activation_shaping(CONFIG.ALPHA, CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
+
     elif CONFIG.experiment in ['domain_adaptation']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
