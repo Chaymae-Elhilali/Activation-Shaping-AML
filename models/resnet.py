@@ -14,12 +14,12 @@ class BaseResNet18(nn.Module):
         return self.resnet(x)
     
     def disable_hooks(self):
-        for index in self.layers_with_hooks:
-            self.all_layers[index].register_forward_hook(None)
+        for handle in self.hook_handles:
+            handle.remove()
     
     def enable_hooks(self):
-        for index in self.layers_with_hooks:
-            self.all_layers[index].register_forward_hook(self.hook_fun)
+        for layer in self.layers_with_hooks:
+            layer.register_forward_hook(self.hook_fun)
 
 
     def hook_activation_shaping(self, alpha=0.5, every_n_convolution=1, skip_first_n_layers=0):
@@ -46,6 +46,7 @@ class BaseResNet18(nn.Module):
         #Make a list of all network convolutional layers to easily iterate over them
         all_layers = []
         layers_with_hooks = []
+        hook_handles = []
         hook_fun = get_activation_shaping_hook(M_random_generator, alpha)
 
         for layer_group in [self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4]:
@@ -57,11 +58,11 @@ class BaseResNet18(nn.Module):
         for i, layer in enumerate(all_layers):
             if (i >= skip_first_n_layers) and (every_n_convolution==0 or ((i-skip_first_n_layers) % every_n_convolution == 0)):
                 layers_with_hooks.append(layer)
-                layer.register_forward_hook(hook_fun)
+                hook_handles.append(layer.register_forward_hook(hook_fun))
                 n_applied += 1
         
         self.layers_with_hooks = layers_with_hooks
-        self.all_layers = all_layers
+        self.hook_handles = hook_handles
         self.hook_fun = hook_fun
         print(f"Applied to {n_applied} layers")
 
