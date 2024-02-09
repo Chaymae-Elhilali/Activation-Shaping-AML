@@ -43,7 +43,7 @@ DEBUG_TRAIN_EACH_TIME=True
 def train(model, data):
 
     # Create optimizers & schedulers
-    optimizer = torch.optim.SGD(model.parameters(), weight_decay=0.0005, momentum=0.9, nesterov=True, lr=0.001)
+    optimizer = torch.optim.SGD(model.parameters(), weight_decay=0.001, momentum=0.9, nesterov=True, lr=0.0003)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(CONFIG.epochs * 0.8), gamma=0.1)
     scaler = torch.cuda.amp.GradScaler(enabled=True)
     # Load checkpoint (if it exists)
@@ -58,6 +58,7 @@ def train(model, data):
     
     # Optimization loop
     for epoch in range(cur_epoch, CONFIG.epochs):
+        total_loss = [0.0, 0]
         model.train()
         for batch_idx, batch in enumerate(tqdm(data['train'])):
             # Compute loss
@@ -68,7 +69,9 @@ def train(model, data):
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                     loss = F.cross_entropy(model(x), y) #cross entropy
-                elif CONFIG.experiment in ['domain_adaptation']:
+                    total_loss[0] += loss.item()
+                    total_loss[1] += x.size(0)
+                elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
                     x, y, target_x = batch
                     x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
                     #If domain adaptation, must run model twice
@@ -76,6 +79,8 @@ def train(model, data):
                     _ = model(target_x)
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
+                    total_loss[0] += loss.item()
+                    total_loss[1] += x.size(0)
                 elif CONFIG.experiment in ['domain_generalization']:
                     x1, x2, x3, y = batch
                     x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
@@ -96,6 +101,8 @@ def train(model, data):
                     #This is equivalent to running the model many time with minibatches but should be faster
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
+                    total_loss[0] += loss.item()
+                    total_loss[1] += x.size(0)
 
                     
             # Optimization step
@@ -105,11 +112,13 @@ def train(model, data):
                 optimizer.zero_grad(set_to_none=True)
                 scaler.update()
 
+
         scheduler.step()
         # Test current epoch
         logging.info(f'[TEST @ Epoch={epoch}]')
+        logging.info(f'Train: Loss: {total_loss[0] / total_loss[1]}')
         #If experiment is domain adaptation must set model in test mode:
-        if (CONFIG.experiment in ['domain_adaptation']):
+        if (CONFIG.experiment in ['domain_adaptation',"domain_adaptation_alt"]):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
             model.state = DomainAdaptationMode.TEST_BINARIZE
@@ -150,9 +159,9 @@ def main():
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
-        model.hook_activation_shaping(CONFIG.ALPHA, CONFIG.APPLY_EVERY_N, CONFIG.SKIP_FIRST_N)
+        model.hook_activation_shaping(CONFIG.ALPHA, CONFIG.LAYERS_LIST)
 
-    elif CONFIG.experiment in ['domain_adaptation']:
+    elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
         assert not CONFIG.test_only
@@ -164,7 +173,7 @@ def main():
         else:
             exit("RECORD_MODE must be either topk or threshold")
 
-        model = ResNet18ForDomainAdaptation(record_mode, CONFIG.K, CONFIG.SKIP_FIRST_N, CONFIG.APPLY_EVERY_N)
+        model = ResNet18ForDomainAdaptation(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
     elif CONFIG.experiment in ['domain_generalization']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
@@ -178,7 +187,7 @@ def main():
         else:
             exit("RECORD_MODE must be either topk or threshold")
 
-        model = ResNet18ForDomainAdaptationExtension(record_mode, CONFIG.K, CONFIG.SKIP_FIRST_N, CONFIG.APPLY_EVERY_N)
+        model = ResNet18ForDomainAdaptationExtension(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
 
 
     model.to(CONFIG.device)
@@ -195,14 +204,14 @@ if __name__ == '__main__':
     CONFIG.update(vars(args))
     if ("ALPHA" in CONFIG.dataset_args):
       CONFIG.ALPHA = CONFIG.dataset_args["ALPHA"]
-    if ("SKIP_FIRST_N" in CONFIG.dataset_args):
-      CONFIG.SKIP_FIRST_N = CONFIG.dataset_args["SKIP_FIRST_N"]
-    if ("APPLY_EVERY_N" in CONFIG.dataset_args):
-      CONFIG.APPLY_EVERY_N = CONFIG.dataset_args["APPLY_EVERY_N"]
     if ("RECORD_MODE" in CONFIG.dataset_args):
-      CONFIG.RECORD_MODE = CONFIG.dataset_args["RECORD_MODE"]
+        CONFIG.RECORD_MODE = CONFIG.dataset_args["RECORD_MODE"]
     if ("K" in CONFIG.dataset_args):
       CONFIG.K = CONFIG.dataset_args["K"]
+    if CONFIG.experiment in ['', 'domain_adaptation', 'domain_adaptation_alt', 'domain_generalization']:
+        LAYERS_LIST = CONFIG.dataset_args["LAYERS_LIST"]
+        CONFIG.LAYERS_LIST = [int(x) for x in CONFIG.dataset_args["LAYERS_LIST"].split(',')]
+
     #target domain: if set, transform it in a list separated by comma
     if ("target_domain" in CONFIG.dataset_args and CONFIG.dataset_args["target_domain"] != ""):
       CONFIG.dataset_args["target_domain"] = CONFIG.dataset_args["target_domain"].replace(" ", "").split(',')
@@ -217,9 +226,11 @@ if __name__ == '__main__':
     # Setup logging
     LOG_FILENAME = "log.txt"
     if (CONFIG.experiment == "activation_shaping_experiments"):
-      LOG_FILENAME = f"SKIP_{CONFIG.SKIP_FIRST_N}_ALPHA_{CONFIG.ALPHA}-APPLY_EVERY_N_{CONFIG.APPLY_EVERY_N}-log.txt"
-    elif (CONFIG.experiment == "domain_adaptation"):
-      LOG_FILENAME = f"SKIP_{CONFIG.SKIP_FIRST_N}_K_{CONFIG.K}-APPLY_EVERY_N_{CONFIG.APPLY_EVERY_N}-RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"
+      LOG_FILENAME = f"L_{LAYERS_LIST}__ALPHA__{CONFIG.ALPHA}-log.txt"
+    elif (CONFIG.experiment in ["domain_adaptation","domain_adaptation_alt"]):
+      LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE__{CONFIG.RECORD_MODE}-log.txt"
+    elif (CONFIG.experiment in ["domain_generalization"]):
+      LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"
     logging.basicConfig(
         filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 

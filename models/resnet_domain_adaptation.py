@@ -39,16 +39,21 @@ def get_domain_adaptation_hook(model, i):
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
                 model.M[i] = model.record_mode(model, output)
-                #output again is (BATCH_SIZE, FILTERS, HEIGHT, WIDTH)
 
             #Apply mode: apply M as in the previous versions   
             elif (model.state == DomainAdaptationMode.APPLY):
-                activation = model.record_mode(model, output)
+                if CONFIG.experiment in ['domain_adaptation']:
+                    activation = model.record_mode(model, output)
+                else:
+                    activation = output
                 output = torch.mul(activation, model.M[i])
             
             #TEST_BINARIZE mode: binarize the output using the chosen record_mode function
             elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
-                output = model.record_mode(model, output)
+                if CONFIG.experiment in ['domain_adaptation']:
+                    output = model.record_mode(model, output)
+                elif CONFIG.experiment in ['domain_adaptation_alt']:
+                    output = torch.mul(output, model.record_mode(model, output))
             
             #In TEST mode, do nothing
                 
@@ -56,7 +61,7 @@ def get_domain_adaptation_hook(model, i):
         return activation_shaping_hook
 
 class ResNet18ForDomainAdaptation(nn.Module):
-    def __init__(self, record_mode, K, skip_first_n_layers=0, every_n_convolution=1):
+    def __init__(self, record_mode, K, layers_to_apply):
         super(ResNet18ForDomainAdaptation, self).__init__()
         self.resnet = resnet18(weights=ResNet18_Weights)
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 7)
@@ -74,15 +79,12 @@ class ResNet18ForDomainAdaptation(nn.Module):
                 all_layers.append(layer.conv1)
                 all_layers.append(layer.conv2)
         #Hook into the convolutional layers
-        n_applied = 0
-        for i, layer in enumerate(all_layers):
-            output_size = int((output_size + 2*layer.padding[0] - layer.kernel_size[0]) / layer.stride[0] + 1)
-            if (i >= skip_first_n_layers) and (every_n_convolution==0 or ((i-skip_first_n_layers) % every_n_convolution == 0)):
-                layer.register_forward_hook(get_domain_adaptation_hook(self, n_applied))
-                n_applied += 1
+        for l in layers_to_apply:
+            all_layers[l].register_forward_hook(get_domain_adaptation_hook(self, l))
+
         
         #Use an array to keep last generated M
-        self.M = [None for _ in range(n_applied)]
+        self.M = [None for _ in range(len(layers_to_apply))]
 
     def forward(self, x):
         return self.resnet(x)

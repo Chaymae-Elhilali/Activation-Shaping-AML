@@ -22,7 +22,7 @@ class BaseResNet18(nn.Module):
             self.hook_handles[index] = layer.register_forward_hook(self.hook_fun)
 
 
-    def hook_activation_shaping(self, alpha=0.5, every_n_convolution=1, skip_first_n_layers=0):
+    def hook_activation_shaping(self, alpha=0.5, layers_to_apply=[]):
         
         def M_random_generator(shape, alpha):
             #Generate a random matrix M with values 0 or 1
@@ -53,12 +53,10 @@ class BaseResNet18(nn.Module):
                 all_layers.append(layer.conv1)
                 all_layers.append(layer.conv2)
         #Hook into the convolutional layers
-        n_applied = 0
-        for i, layer in enumerate(all_layers):
-            if (i >= skip_first_n_layers) and (every_n_convolution==0 or ((i-skip_first_n_layers) % every_n_convolution == 0)):
-                layers_with_hooks.append(layer)
-                hook_handles.append(layer.register_forward_hook(hook_fun))
-                n_applied += 1
+        n_applied = len(layers_to_apply)
+        for l in layers_to_apply:
+            layers_with_hooks.append(all_layers[l])
+            hook_handles.append(all_layers[l].register_forward_hook(hook_fun))
         
         self.layers_with_hooks = layers_with_hooks
         self.hook_handles = hook_handles

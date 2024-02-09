@@ -35,7 +35,7 @@ def get_domain_adaptation_hook(model, i):
         return activation_shaping_hook
 
 class ResNet18ForDomainAdaptationExtension(nn.Module):
-    def __init__(self, record_mode, K, skip_first_n_layers=0, every_n_convolution=1):
+    def __init__(self, record_mode, K, layers_to_apply):
         super(ResNet18ForDomainAdaptationExtension, self).__init__()
         self.resnet = resnet18(weights=ResNet18_Weights)
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 7)
@@ -53,12 +53,9 @@ class ResNet18ForDomainAdaptationExtension(nn.Module):
                 all_layers.append(layer.conv1)
                 all_layers.append(layer.conv2)
         #Hook into the convolutional layers
-        n_applied = 0
-        for i, layer in enumerate(all_layers):
-            output_size = int((output_size + 2*layer.padding[0] - layer.kernel_size[0]) / layer.stride[0] + 1)
-            if (i >= skip_first_n_layers) and (every_n_convolution==0 or ((i-skip_first_n_layers) % every_n_convolution == 0)):
-                layer.register_forward_hook(get_domain_adaptation_hook(self, n_applied))
-                n_applied += 1
+        n_applied = len(layers_to_apply)
+        for index,l in enumerate(layers_to_apply):
+            all_layers[l].register_forward_hook(get_domain_adaptation_hook(self, index))
         
         #Use an array to keep last generated M
         self.M = [None for _ in range(n_applied)]

@@ -53,7 +53,7 @@ def load_data():
             test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = BaseDataset(source_examples, transform=train_transform)
-    elif CONFIG.experiment in ['domain_adaptation']:
+    elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
         source_examples = []
         test_dataset = {}
 
