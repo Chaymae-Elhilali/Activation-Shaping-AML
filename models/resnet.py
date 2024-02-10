@@ -22,23 +22,20 @@ class BaseResNet18(nn.Module):
             self.hook_handles[index] = layer.register_forward_hook(self.hook_fun)
 
 
+
     def hook_activation_shaping(self, alpha=0.5, layers_to_apply=[]):
         
+        #Random matrix generator
         def M_random_generator(shape, alpha):
-            #Generate a random matrix M with values 0 or 1
             M = torch.ones(shape, device='cuda:0')
             M = torch.where(torch.rand(shape, device='cuda:0') <= alpha, M, torch.zeros(shape, device='cuda:0')).to(CONFIG.device)
             return M
 
-        #Get activation shaping hook returns a function that can be used as a hook while containing the M matrix
+        #Get activation shaping hook returns the hook function as a closure containing alpha and the random matrix generator
         def get_activation_shaping_hook(generate_M, alpha):
             def activation_shaping_hook(module, input, output):
-                #Apply a transformation to the output
-                #Binarize output: if < 0 -> 0, else -> 1
                 activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
-                #Multiply output with random M
                 output = torch.mul(activation, generate_M(activation.shape, alpha))
-                #Return output
                 return output
             return activation_shaping_hook
 

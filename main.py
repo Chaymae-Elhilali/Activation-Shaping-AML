@@ -13,8 +13,7 @@ from parse_args import parse_arguments
 
 from dataset import PACS
 from models.resnet import BaseResNet18
-from models.resnet_domain_adaptation import *
-from models.resnet_domain_adaptation_extension import *
+from models.resnet_domain_adaptation_generalization import *
 
 from globals import CONFIG
 
@@ -71,11 +70,12 @@ def train(model, data):
                     loss = F.cross_entropy(model(x), y) #cross entropy
                     total_loss[0] += loss.item()
                     total_loss[1] += x.size(0)
-                elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
+                elif CONFIG.experiment in ['domain_adaptation']:
                     x, y, target_x = batch
                     x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
                     #If domain adaptation, must run model twice
                     model.state = DomainAdaptationMode.RECORD
+                    model.reset_M()
                     _ = model(target_x)
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
@@ -118,7 +118,7 @@ def train(model, data):
         logging.info(f'[TEST @ Epoch={epoch}]')
         logging.info(f'Train: Loss: {total_loss[0] / total_loss[1]}')
         #If experiment is domain adaptation must set model in test mode:
-        if (CONFIG.experiment in ['domain_adaptation',"domain_adaptation_alt"]):
+        if (CONFIG.experiment in ['domain_adaptation']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
             model.state = DomainAdaptationMode.TEST_BINARIZE
@@ -161,7 +161,7 @@ def main():
         #Apply hooks
         model.hook_activation_shaping(CONFIG.ALPHA, CONFIG.LAYERS_LIST)
 
-    elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
+    elif CONFIG.experiment in ['domain_adaptation']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
         assert not CONFIG.test_only
@@ -173,7 +173,7 @@ def main():
         else:
             exit("RECORD_MODE must be either topk or threshold")
 
-        model = ResNet18ForDomainAdaptation(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
+        model = ResNet18Extended(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
     elif CONFIG.experiment in ['domain_generalization']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
@@ -186,8 +186,7 @@ def main():
             record_mode = RecordModeRule.TOP_K
         else:
             exit("RECORD_MODE must be either topk or threshold")
-
-        model = ResNet18ForDomainAdaptationExtension(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
+        model = ResNet18Extended(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
 
 
     model.to(CONFIG.device)
@@ -202,32 +201,35 @@ if __name__ == '__main__':
     # Parse arguments
     args = parse_arguments()
     CONFIG.update(vars(args))
+    #Parse experiment-specific arguments
     if ("ALPHA" in CONFIG.dataset_args):
       CONFIG.ALPHA = CONFIG.dataset_args["ALPHA"]
     if ("RECORD_MODE" in CONFIG.dataset_args):
         CONFIG.RECORD_MODE = CONFIG.dataset_args["RECORD_MODE"]
     if ("K" in CONFIG.dataset_args):
       CONFIG.K = CONFIG.dataset_args["K"]
-    if CONFIG.experiment in ['', 'domain_adaptation', 'domain_adaptation_alt', 'domain_generalization']:
+    if CONFIG.experiment in ['', 'domain_adaptation', 'domain_generalization']:
         LAYERS_LIST = CONFIG.dataset_args["LAYERS_LIST"]
         CONFIG.LAYERS_LIST = [int(x) for x in CONFIG.dataset_args["LAYERS_LIST"].split(',')]
-
     #target domain: if set, transform it in a list separated by comma
     if ("target_domain" in CONFIG.dataset_args and CONFIG.dataset_args["target_domain"] != ""):
       CONFIG.dataset_args["target_domain"] = CONFIG.dataset_args["target_domain"].replace(" ", "").split(',')
-    if (CONFIG.experiment == "domain_generalization"):
+    if (CONFIG.experiment in ["domain_generalization"]):
         CONFIG.dataset_args["source_domain"] = ["art_painting","cartoon","photo","sketch"]
         CONFIG.dataset_args["source_domain"].remove(CONFIG.dataset_args["target_domain"][0])
         CONFIG.batch_size = int(CONFIG.batch_size/3)
-      
+    if 'EXTENSION' in CONFIG.dataset_args:
+        CONFIG.EXTENSION = CONFIG.dataset_args['EXTENSION']
+    else:
+        CONFIG.EXTENSION = 0  
     # Setup output directory
-    CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name)
+    CONFIG.save_dir = os.path.join('record', CONFIG.dataset_args["OUTPUT_NAME"])
     os.makedirs(CONFIG.save_dir, exist_ok=True)
     # Setup logging
     LOG_FILENAME = "log.txt"
     if (CONFIG.experiment == "activation_shaping_experiments"):
       LOG_FILENAME = f"L_{LAYERS_LIST}__ALPHA__{CONFIG.ALPHA}-log.txt"
-    elif (CONFIG.experiment in ["domain_adaptation","domain_adaptation_alt"]):
+    elif (CONFIG.experiment in ["domain_adaptation"]):
       LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE__{CONFIG.RECORD_MODE}-log.txt"
     elif (CONFIG.experiment in ["domain_generalization"]):
       LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"

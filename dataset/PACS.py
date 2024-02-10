@@ -29,6 +29,7 @@ def load_data():
     test_transform = get_transform(size=224, mean=mean, std=std, preprocess=False)
 
     # Load examples & create Dataset
+    #Baseline and activation shaping 
     if CONFIG.experiment in ['baseline', 'activation_shaping_experiments']:
         source_examples = []
         test_dataset = {}
@@ -53,7 +54,9 @@ def load_data():
             test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = BaseDataset(source_examples, transform=train_transform)
-    elif CONFIG.experiment in ['domain_adaptation', 'domain_adaptation_alt']:
+
+    #Domain adaptation and its alternative
+    elif CONFIG.experiment in ['domain_adaptation']:
         source_examples = []
         test_dataset = {}
 
@@ -77,6 +80,8 @@ def load_data():
             test_dataset[target_domain] = BaseDataset(target_examples, transform=test_transform)
 
         train_dataset = DomainAdaptationDataset(source_examples, target_examples, transform=train_transform)
+
+    #Domain generalization and its alternative
     elif CONFIG.experiment in ['domain_generalization']:
         source_examples = []
         test_dataset = {}
