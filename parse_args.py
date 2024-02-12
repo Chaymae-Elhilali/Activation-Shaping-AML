@@ -8,7 +8,7 @@ def _clear_args(parsed_args):
 def parse_arguments():
     parser = ArgumentParser()
 
-    parser.add_argument('--seed', type=int, default=0, help='Seed used for deterministic behavior')
+    parser.add_argument('--seed', type=int, default=1, help='Seed used for deterministic behavior')
     parser.add_argument('--test_only', action='store_true', help='Whether to skip training')
     parser.add_argument('--cpu', action='store_true', help='Whether to force the usage of CPU')
 
@@ -21,5 +21,10 @@ def parse_arguments():
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--num_workers', type=int, default=5)
     parser.add_argument('--grad_accum_steps', type=int, default=1)
+
+    parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--weight_decay', type=float, default=0.0005)
+    parser.add_argument('--extra_str', type=str, default='')
+    parser.add_argument('--print_stats', type=int, default=0)
 
     return _clear_args(parser.parse_args())

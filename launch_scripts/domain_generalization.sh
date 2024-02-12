@@ -1,5 +1,5 @@
 target_domain=${1}
-test_only=${2}
+EXTENSION_PARAMS=${2}
 K=${3}
 RECORD_MODE=${4}
 LAYERS_LIST=${5}
@@ -10,4 +10,4 @@ python3 main.py \
 --dataset_args="{'root': 'data/PACS', 'target_domain': '${target_domain}', 'K': ${K}, 'RECORD_MODE': '${RECORD_MODE}', 'LAYERS_LIST': '${LAYERS_LIST}' }"  \
 --batch_size=128 \
 --num_workers=5 \
---grad_accum_steps=1 ${test_only}
+--grad_accum_steps=1 ${EXTENSION_PARAMS}

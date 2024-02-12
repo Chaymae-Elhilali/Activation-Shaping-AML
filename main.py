@@ -42,7 +42,7 @@ DEBUG_TRAIN_EACH_TIME=True
 def train(model, data):
 
     # Create optimizers & schedulers
-    optimizer = torch.optim.SGD(model.parameters(), weight_decay=0.001, momentum=0.9, nesterov=True, lr=0.0003)
+    optimizer = torch.optim.SGD(model.parameters(), weight_decay=CONFIG.weight_decay, momentum=0.9, nesterov=True, lr=CONFIG.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(CONFIG.epochs * 0.8), gamma=0.1)
     scaler = torch.cuda.amp.GradScaler(enabled=True)
     # Load checkpoint (if it exists)
@@ -61,36 +61,47 @@ def train(model, data):
         model.train()
         for batch_idx, batch in enumerate(tqdm(data['train'])):
             # Compute loss
-            with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
-
-                if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
+            #with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
+            if (CONFIG.print_stats == 1):
+                model.statistics = {}
+            if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
+                with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                     loss = F.cross_entropy(model(x), y) #cross entropy
                     total_loss[0] += loss.item()
                     total_loss[1] += x.size(0)
-                elif CONFIG.experiment in ['domain_adaptation']:
-                    x, y, target_x = batch
-                    x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
-                    #If domain adaptation, must run model twice
-                    model.state = DomainAdaptationMode.RECORD
-                    model.reset_M()
-                    _ = model(target_x)
-                    model.state = DomainAdaptationMode.APPLY
+            elif CONFIG.experiment in ['domain_adaptation']:
+                x, y, target_x = batch
+                x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
+                #If domain adaptation, must run model twice
+                model.state = DomainAdaptationMode.RECORD
+                with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
+                    with torch.no_grad():
+                        model.eval()
+                        model.reset_M()
+                        _ = model(target_x)
+                        model.train()
+                model.state = DomainAdaptationMode.APPLY
+                with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     loss = F.cross_entropy(model(x), y)
-                    total_loss[0] += loss.item()
-                    total_loss[1] += x.size(0)
-                elif CONFIG.experiment in ['domain_generalization']:
-                    x1, x2, x3, y = batch
-                    x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
-                    #Record the activation matrices for x1, x2, x3
-                    model.state = DomainAdaptationMode.RECORD
-                    model.reset_M()
-                    _ = model(x1)
-                    _ = model(x2)
-                    _ = model(x3)
+                
+                total_loss[0] += loss.item()
+                total_loss[1] += x.size(0)
+            elif CONFIG.experiment in ['domain_generalization']:
+                x1, x2, x3, y = batch
+                x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
+                #Record the activation matrices for x1, x2, x3
+                model.state = DomainAdaptationMode.RECORD
+                with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
+                    with torch.no_grad():
+                        model.reset_M()
+                        _ = model(x1)
+                        _ = model(x2)
+                        _ = model(x3)
 
+                with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
                     #Concatenate x1,x2,x3 in the first dimension
                     x = torch.cat((x1, x2, x3), 0)
@@ -103,6 +114,9 @@ def train(model, data):
                     loss = F.cross_entropy(model(x), y)
                     total_loss[0] += loss.item()
                     total_loss[1] += x.size(0)
+            
+                    if (CONFIG.print_stats == 1 and (epoch == 2 or epoch==10) and batch_idx <= 10):
+                        logging.info("Statistics:\n" + model.format_statistics())
 
                     
             # Optimization step
@@ -121,24 +135,21 @@ def train(model, data):
         if (CONFIG.experiment in ['domain_adaptation']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
-            model.state = DomainAdaptationMode.TEST_BINARIZE
-            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+            #model.state = DomainAdaptationMode.TEST_BINARIZE
+            #evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         elif (CONFIG.experiment in ['domain_generalization']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
-            model.state = DomainAdaptationMode.TEST_BINARIZE
-            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+            #model.state = DomainAdaptationMode.TEST_BINARIZE
+            #evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         elif (CONFIG.experiment in ['activation_shaping_experiments']):
             evaluate(model, data['test'], extra_str="TEST WITH BINARIZATION ")
             model.disable_hooks()
-            evaluate(model, data['test'], extra_str="TEST WITHOUT BINARIZATION ")
-            model.enable_hooks()
+            #evaluate(model, data['test'], extra_str="TEST WITHOUT BINARIZATION ")
+            #model.enable_hooks()
         else:
             evaluate(model, data['test'])
         
-        #if (CONFIG.experiment in ['domain_generalization']):
-        #    data["train"].dataset.shuffle_examples()
-        # Save checkpoint
         checkpoint = {
             'epoch': epoch + 1,
             'optimizer': optimizer.state_dict(),
@@ -187,7 +198,8 @@ def main():
         else:
             exit("RECORD_MODE must be either topk or threshold")
         model = ResNet18Extended(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
-
+    if (CONFIG.print_stats == 1):
+        CONFIG.epochs = 11
 
     model.to(CONFIG.device)
 
@@ -201,6 +213,17 @@ if __name__ == '__main__':
     # Parse arguments
     args = parse_arguments()
     CONFIG.update(vars(args))
+
+    # Set experiment's device & deterministic behavior
+    if CONFIG.cpu:
+        CONFIG.device = torch.device('cpu')
+
+    torch.manual_seed(CONFIG.seed)
+    random.seed(CONFIG.seed)
+    np.random.seed(CONFIG.seed)
+    torch.backends.cudnn.benchmark = True
+    torch.use_deterministic_algorithms(mode=True, warn_only=True)
+
     #Parse experiment-specific arguments
     if ("ALPHA" in CONFIG.dataset_args):
       CONFIG.ALPHA = CONFIG.dataset_args["ALPHA"]
@@ -208,7 +231,7 @@ if __name__ == '__main__':
         CONFIG.RECORD_MODE = CONFIG.dataset_args["RECORD_MODE"]
     if ("K" in CONFIG.dataset_args):
       CONFIG.K = CONFIG.dataset_args["K"]
-    if CONFIG.experiment in ['', 'domain_adaptation', 'domain_generalization']:
+    if CONFIG.experiment in ['activation_shaping_experiments', 'domain_adaptation', 'domain_generalization']:
         LAYERS_LIST = CONFIG.dataset_args["LAYERS_LIST"]
         CONFIG.LAYERS_LIST = [int(x) for x in CONFIG.dataset_args["LAYERS_LIST"].split(',')]
     #target domain: if set, transform it in a list separated by comma
@@ -223,7 +246,7 @@ if __name__ == '__main__':
     else:
         CONFIG.EXTENSION = 0  
     # Setup output directory
-    CONFIG.save_dir = os.path.join('record', CONFIG.dataset_args["OUTPUT_NAME"])
+    CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name, CONFIG.extra_str)
     os.makedirs(CONFIG.save_dir, exist_ok=True)
     # Setup logging
     LOG_FILENAME = "log.txt"
@@ -240,14 +263,5 @@ if __name__ == '__main__':
         filemode='a'
     )
 
-    # Set experiment's device & deterministic behavior
-    if CONFIG.cpu:
-        CONFIG.device = torch.device('cpu')
-
-    torch.manual_seed(CONFIG.seed)
-    random.seed(CONFIG.seed)
-    np.random.seed(CONFIG.seed)
-    torch.backends.cudnn.benchmark = True
-    torch.use_deterministic_algorithms(mode=True, warn_only=True)
 
     main()

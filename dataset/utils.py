@@ -40,6 +40,7 @@ class DomainAdaptationDataset(Dataset):
         y = torch.tensor(y).long()
 
         targ_x, _ = self.target_examples[random.randint(0, len(self.target_examples) - 1)]
+        #targ_x, _ = self.target_examples[index % len(self.target_examples)]
         targ_x = Image.open(targ_x).convert('RGB')
         targ_x = self.T(targ_x).to(CONFIG.dtype)
         return x, y, targ_x
