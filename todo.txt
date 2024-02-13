@@ -1,0 +1,7 @@
+Idee generali paper:
+
+>Risultati baseline
+>Risultati punto 2 comparati a baseline e a random M
+>Risultati punto 3 comparati a baseline e soprattutto a punto 3 con M random o in TEST mode.
+>Eventualmente, parte su similitudine dei layers, + vedere se applicare filtro migliora
+>Eventualmente parti estese senza binarizzazione

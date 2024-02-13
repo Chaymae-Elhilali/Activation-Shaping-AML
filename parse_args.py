@@ -26,5 +26,6 @@ def parse_arguments():
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--extra_str', type=str, default='')
     parser.add_argument('--print_stats', type=int, default=0)
+    parser.add_argument('--layers_only_for_stats', type=str, default="")
 
     return _clear_args(parser.parse_args())

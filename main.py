@@ -94,12 +94,14 @@ def train(model, data):
                 x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                 #Record the activation matrices for x1, x2, x3
                 model.state = DomainAdaptationMode.RECORD
+                model.reset_M()
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     with torch.no_grad():
-                        model.reset_M()
+                        model.eval()
                         _ = model(x1)
                         _ = model(x2)
                         _ = model(x3)
+                        model.train()
 
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
@@ -115,8 +117,8 @@ def train(model, data):
                     total_loss[0] += loss.item()
                     total_loss[1] += x.size(0)
             
-                    if (CONFIG.print_stats == 1 and (epoch == 2 or epoch==10) and batch_idx <= 10):
-                        logging.info("Statistics:\n" + model.format_statistics())
+                    if (CONFIG.print_stats == 1 and (epoch % 5 == 0) and batch_idx <= 4):
+                        logging.info("Statistics at epoch {epoch}:\n" + model.format_statistics())
 
                     
             # Optimization step
@@ -199,7 +201,7 @@ def main():
             exit("RECORD_MODE must be either topk or threshold")
         model = ResNet18Extended(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
     if (CONFIG.print_stats == 1):
-        CONFIG.epochs = 11
+        CONFIG.epochs = 16
 
     model.to(CONFIG.device)
 
@@ -245,6 +247,11 @@ if __name__ == '__main__':
         CONFIG.EXTENSION = CONFIG.dataset_args['EXTENSION']
     else:
         CONFIG.EXTENSION = 0  
+    if (len(CONFIG.layers_only_for_stats) > 0):
+        CONFIG.layers_only_for_stats = [int(x) for x in CONFIG.layers_only_for_stats.split(',')]
+    else:
+        CONFIG.layers_only_for_stats = []
+    print(CONFIG.layers_only_for_stats)
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name, CONFIG.extra_str)
     os.makedirs(CONFIG.save_dir, exist_ok=True)

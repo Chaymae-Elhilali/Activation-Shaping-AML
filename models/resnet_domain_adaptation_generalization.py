@@ -41,7 +41,7 @@ def get_domain_adaptation_hook(model, i):
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
                 if (CONFIG.EXTENSION < 2):
-                    M = model.record_mode(model, output.clone().detach()).detach()
+                    M = model.record_mode(model, output).detach()
                     
                 else:
                     M = output.clone().detach()
@@ -72,7 +72,9 @@ def get_domain_adaptation_hook(model, i):
                 #model.M[i] is already the product of all the Mi
                 
                 activation = torch.mul(activation, model.M[i])
-                output = activation
+                #IF index is in layers_only_for_stats, do not apply the transformation. It is used only to produce statistics
+                if (i not in CONFIG.layers_only_for_stats):
+                    output = activation
 
                 if (CONFIG.print_stats == 1):
                     #Statistics
@@ -122,7 +124,15 @@ class ResNet18Extended(nn.Module):
 
         #Use a dictionary to store arbitrary statistics
         self.statistics = {}
+        self.layers_to_apply = layers_to_apply
     
+    #DEBUG ONLY method - clone entire model
+    def clone(self):
+        new_model = ResNet18Extended(self.record_mode, self.K, self.layers_to_apply)
+        new_model.load_state_dict(self.state_dict())
+        new_model.resnet.cuda()
+        return new_model
+
     def format_statistics(self):
         s = ""
         for key in self.statistics:
