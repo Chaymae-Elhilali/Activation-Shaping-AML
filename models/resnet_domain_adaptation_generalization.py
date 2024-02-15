@@ -38,6 +38,10 @@ class RecordModeRule:
    EXTENSION = 2: Do not binarize either Ms nor activations when applying M"""
 def get_domain_adaptation_hook(model, i):
         def activation_shaping_hook(module, input, output):
+            if (CONFIG.apply_progressively == 1 and model.current_layer_to_apply != i):
+                return output
+            
+
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
                 if (CONFIG.EXTENSION < 2):
@@ -139,6 +143,10 @@ class ResNet18Extended(nn.Module):
         #Extra experiment, using random activation map on second (third) layer
         if (CONFIG.random_M_on_second == 1):
             all_layers[1].register_forward_hook(simple_activation_shaping_hook)
+        
+
+    def set_current_layer_to_apply(self, layer):
+        self.current_layer_to_apply = layer
 
     def format_statistics(self):
         s = ""

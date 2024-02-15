@@ -57,6 +57,10 @@ def train(model, data):
     
     # Optimization loop
     for epoch in range(cur_epoch, CONFIG.epochs):
+        if (CONFIG.apply_progressively == 1 and CONFIG.experiment in ['domain_generalization','domain_adaptation']):
+            l = min(int(epoch / int(CONFIG.epochs / len(CONFIG.LAYERS_LIST))), len(CONFIG.LAYERS_LIST) - 1)
+            model.set_current_layer_to_apply(l)
+
         total_loss = [0.0, 0]
         model.train()
         for batch_idx, batch in enumerate(tqdm(data['train'])):
@@ -271,6 +275,8 @@ if __name__ == '__main__':
       LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"
     if (CONFIG.random_M_on_second):
         LOG_FILENAME = "random_M_" + LOG_FILENAME
+    if (CONFIG.apply_progressively == 1):
+        LOG_FILENAME = "progressive_" + LOG_FILENAME
     logging.basicConfig(
         filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 
