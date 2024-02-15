@@ -64,31 +64,34 @@ def train(model, data):
             #with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
             if (CONFIG.print_stats == 1):
                 model.statistics = {}
+
             if CONFIG.experiment in ['baseline', 'activation_shaping_experiments'] :
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
-                    #x: feature; y: label
                     x, y = batch
                     x, y = x.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
                     loss = F.cross_entropy(model(x), y) #cross entropy
                     total_loss[0] += loss.item()
                     total_loss[1] += x.size(0)
+
             elif CONFIG.experiment in ['domain_adaptation']:
                 x, y, target_x = batch
                 x, y, target_x = x.to(CONFIG.device), y.to(CONFIG.device), target_x.to(CONFIG.device) #move to gpu
                 #If domain adaptation, must run model twice
                 model.state = DomainAdaptationMode.RECORD
+                model.reset_M()
+                model.eval()
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     with torch.no_grad():
-                        model.eval()
-                        model.reset_M()
                         _ = model(target_x)
-                        model.train()
+                model.train()
                 model.state = DomainAdaptationMode.APPLY
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     loss = F.cross_entropy(model(x), y)
                 
                 total_loss[0] += loss.item()
                 total_loss[1] += x.size(0)
+                if (CONFIG.print_stats == 1 and (epoch % 5 == 0) and batch_idx <= 4):
+                    logging.info("Statistics at epoch {epoch}:\n" + model.format_statistics())
             elif CONFIG.experiment in ['domain_generalization']:
                 x1, x2, x3, y = batch
                 x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
@@ -102,6 +105,8 @@ def train(model, data):
                         _ = model(x2)
                         _ = model(x3)
                         model.train()
+
+                        
 
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
@@ -137,18 +142,18 @@ def train(model, data):
         if (CONFIG.experiment in ['domain_adaptation']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
-            #model.state = DomainAdaptationMode.TEST_BINARIZE
-            #evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+            model.state = DomainAdaptationMode.TEST_BINARIZE
+            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         elif (CONFIG.experiment in ['domain_generalization']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
             #model.state = DomainAdaptationMode.TEST_BINARIZE
             #evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         elif (CONFIG.experiment in ['activation_shaping_experiments']):
-            evaluate(model, data['test'], extra_str="TEST WITH BINARIZATION ")
+            evaluate(model, data['test'], extra_str="TEST WITH BINARIZATION")
             model.disable_hooks()
-            #evaluate(model, data['test'], extra_str="TEST WITHOUT BINARIZATION ")
-            #model.enable_hooks()
+            evaluate(model, data['test'], extra_str="TEST WITHOUT BINARIZATION ")
+            model.enable_hooks()
         else:
             evaluate(model, data['test'])
         
@@ -169,6 +174,7 @@ def main():
     # Load model
     if CONFIG.experiment in ['baseline']:
         model = BaseResNet18()
+    
     elif CONFIG.experiment in ['activation_shaping_experiments']:
         model = BaseResNet18()
         #Apply hooks
@@ -263,6 +269,8 @@ if __name__ == '__main__':
       LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE__{CONFIG.RECORD_MODE}-log.txt"
     elif (CONFIG.experiment in ["domain_generalization"]):
       LOG_FILENAME = f"L_{LAYERS_LIST}__K__{CONFIG.K}__RECORD_MODE{CONFIG.RECORD_MODE}-log.txt"
+    if (CONFIG.random_M_on_second):
+        LOG_FILENAME = "random_M_" + LOG_FILENAME
     logging.basicConfig(
         filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 

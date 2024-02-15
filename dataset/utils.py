@@ -45,20 +45,7 @@ class DomainAdaptationDataset(Dataset):
         targ_x = self.T(targ_x).to(CONFIG.dtype)
         return x, y, targ_x
 
-"""
-DomainGeneralizationDataset is required to return a set of examples from != domains with the constraint that they must
-belong to the same class.
-This is complicated by the fact that != domains have != dataset sizes.
-Moreover, it might be useful to shuffle the examples from epoch to epoch, so instances aren't always paired to the same others.
-And we also don't want to "waste" examples from the bigger domains.
-So the class works as follow:
-In the constructor it receives an array with one dictionary for each domain.
-The dictionary is as follow: { label: [example1, .. example 2] }
-#The method shuffle_examples creates the list of pairs: [(example_dom_1, example_dom_2, .., label), ..]
-the getitem method returns one of these pairs.
-At the end of each epoch, the shuffle_examples method can be called to re-shuffle examples
-It is not mandatory but it is useful to avoid always pairing the same examples.
-"""
+
 class DomainGeneralizationDataset(Dataset):
     def __init__(self, examples, transform):
         self.examples = DomainGeneralizationDataset.build_examples(examples)

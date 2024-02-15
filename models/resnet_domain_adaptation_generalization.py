@@ -42,7 +42,6 @@ def get_domain_adaptation_hook(model, i):
             if (model.state == DomainAdaptationMode.RECORD):
                 if (CONFIG.EXTENSION < 2):
                     M = model.record_mode(model, output).detach()
-                    
                 else:
                     M = output.clone().detach()
 
@@ -85,7 +84,7 @@ def get_domain_adaptation_hook(model, i):
             elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
                 #In extension 0, output is binarized-filtered as matrix M. In extension 1, output is multiplied by binarized version of itself
                 if (CONFIG.EXTENSION == 0):
-                    output = model.record_mode(model, output)
+                    output = model.record_mode(model, output)# torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
                 #With EXTENSION=2, TEST_BINARIZE does not actually binarize activations but still keeps 
                 #only the values >= K; kind of like computing M over itself and then applying it
                 elif (CONFIG.EXTENSION == 1):
@@ -97,7 +96,18 @@ def get_domain_adaptation_hook(model, i):
             return output
         return activation_shaping_hook
 
+def M_random_generator(shape, alpha):
+    M = torch.ones(shape, device='cuda:0')
+    M = torch.where(torch.rand(shape, device='cuda:0') <= alpha, M, torch.zeros(shape, device='cuda:0')).to(CONFIG.device)
+    return M
+
+def simple_activation_shaping_hook(module, input, output):
+    activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
+    output = torch.mul(activation, M_random_generator(activation.shape, 0.9))
+    return output
+
 class ResNet18Extended(nn.Module):
+
     def __init__(self, record_mode, K, layers_to_apply):
         super(ResNet18Extended, self).__init__()
         self.resnet = resnet18(weights=ResNet18_Weights)
@@ -110,7 +120,7 @@ class ResNet18Extended(nn.Module):
         
         #Register hooks
         #Make a list of all network convolutional layers to easily iterate over them
-        all_layers = [self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4] #[]
+        all_layers = [] #[self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4] 
         for layer_group in [self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4]:
             for layer in layer_group:
                 all_layers.append(layer.conv1)
@@ -125,13 +135,10 @@ class ResNet18Extended(nn.Module):
         #Use a dictionary to store arbitrary statistics
         self.statistics = {}
         self.layers_to_apply = layers_to_apply
-    
-    #DEBUG ONLY method - clone entire model
-    def clone(self):
-        new_model = ResNet18Extended(self.record_mode, self.K, self.layers_to_apply)
-        new_model.load_state_dict(self.state_dict())
-        new_model.resnet.cuda()
-        return new_model
+
+        #Extra experiment, using random activation map on second (third) layer
+        if (CONFIG.random_M_on_second == 1):
+            all_layers[1].register_forward_hook(simple_activation_shaping_hook)
 
     def format_statistics(self):
         s = ""
@@ -154,4 +161,11 @@ class ResNet18Extended(nn.Module):
         #For each m in M, and for each matrix in m, extend it by multiply_factor over dimension 0 (batch size)
         for i in range(len(self.M)):
             self.M[i] = torch.cat([self.M[i]]*multiply_factor, dim=0)
+
+    #DEBUG ONLY method - clone entire model
+    def clone(self):
+        new_model = ResNet18Extended(self.record_mode, self.K, self.layers_to_apply)
+        new_model.load_state_dict(self.state_dict())
+        new_model.resnet.cuda()
+        return new_model
         
