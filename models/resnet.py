@@ -30,7 +30,7 @@ class BaseResNet18(nn.Module):
 
 
     def hook_activation_shaping(self, alpha=0.5, layers_to_apply=[]):
-        
+        #M_random and random_M
         #Random matrix generator
         def M_random_generator(shape, alpha):
             M = torch.ones(shape, device='cuda:0')
