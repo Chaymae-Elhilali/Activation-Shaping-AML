@@ -1,7 +1,7 @@
 import torch
 import os
 import torchvision.transforms as T
-from dataset.utils import BaseDataset, DomainAdaptationDataset, DomainGeneralizationDataset #, DomainAdaptationDataset, DomainGeneralizationDataset
+from dataset.utils import BaseDataset, DomainAdaptationDataset, DomainGeneralizationDataset
 from dataset.utils import SeededDataLoader
 
 from globals import CONFIG

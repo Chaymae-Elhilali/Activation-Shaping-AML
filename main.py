@@ -57,7 +57,7 @@ def train(model, data):
     
     # Optimization loop
     for epoch in range(cur_epoch, CONFIG.epochs):
-        if (CONFIG.apply_progressively == 1 and CONFIG.experiment in ['domain_generalization','domain_adaptation']):
+        if ((CONFIG.apply_progressively == 1 or CONFIG.apply_progressively_perm==1) and CONFIG.experiment in ['domain_generalization','domain_adaptation']):
             l = min(int(epoch / int(CONFIG.epochs / len(CONFIG.LAYERS_LIST))), len(CONFIG.LAYERS_LIST) - 1)
             model.set_current_layer_to_apply(l)
 
@@ -95,7 +95,8 @@ def train(model, data):
                 total_loss[0] += loss.item()
                 total_loss[1] += x.size(0)
                 if (CONFIG.print_stats == 1 and (epoch % 5 == 0) and batch_idx <= 4):
-                    logging.info("Statistics at epoch {epoch}:\n" + model.format_statistics())
+                    logging.info(f"Statistics at epoch {epoch}:\n" + model.format_statistics())
+            
             elif CONFIG.experiment in ['domain_generalization']:
                 x1, x2, x3, y = batch
                 x1, x2, x3, y = x1.to(CONFIG.device), x2.to(CONFIG.device), x3.to(CONFIG.device), y.to(CONFIG.device) #move to gpu
@@ -108,10 +109,8 @@ def train(model, data):
                         _ = model(x1)
                         _ = model(x2)
                         _ = model(x3)
-                        model.train()
-
-                        
-
+                
+                model.train()
                 with torch.autocast(device_type=CONFIG.device, dtype=torch.float16, enabled=True):
                     #Instead of creating minibatch with single instances of x1, x2, x3, create one superbatch with all of them
                     #Concatenate x1,x2,x3 in the first dimension
@@ -119,8 +118,8 @@ def train(model, data):
                     y = torch.cat((y, y, y), 0)
 
                     #The matrices M must be extended to match the new batch size
+                    #On dim 0, M had activations for multiple elements of the activations on the original batch
                     model.extend_M_for_bigger_batch(3)
-                    #This is equivalent to running the model many time with minibatches but should be faster
                     model.state = DomainAdaptationMode.APPLY
                     loss = F.cross_entropy(model(x), y)
                     total_loss[0] += loss.item()
@@ -151,8 +150,8 @@ def train(model, data):
         elif (CONFIG.experiment in ['domain_generalization']):
             model.state = DomainAdaptationMode.TEST
             evaluate(model, data['test'], extra_str="TEST SIMPLE ")
-            #model.state = DomainAdaptationMode.TEST_BINARIZE
-            #evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
+            model.state = DomainAdaptationMode.TEST_BINARIZE
+            evaluate(model, data['test'], extra_str="TEST SIMPLE BINARIZED ")
         elif (CONFIG.experiment in ['activation_shaping_experiments']):
             evaluate(model, data['test'], extra_str="TEST WITH BINARIZATION")
             model.disable_hooks()
@@ -197,6 +196,7 @@ def main():
             exit("RECORD_MODE must be either topk or threshold")
 
         model = ResNet18Extended(record_mode, CONFIG.K, CONFIG.LAYERS_LIST)
+    
     elif CONFIG.experiment in ['domain_generalization']:
         #In previous experiments we could have multiple target domains and test on all of them, now only one at a time
         assert len(CONFIG.dataset_args["target_domain"])==1
@@ -261,7 +261,7 @@ if __name__ == '__main__':
         CONFIG.layers_only_for_stats = [int(x) for x in CONFIG.layers_only_for_stats.split(',')]
     else:
         CONFIG.layers_only_for_stats = []
-    print(CONFIG.layers_only_for_stats)
+        
     # Setup output directory
     CONFIG.save_dir = os.path.join('record', CONFIG.experiment_name, CONFIG.extra_str)
     os.makedirs(CONFIG.save_dir, exist_ok=True)
@@ -277,6 +277,8 @@ if __name__ == '__main__':
         LOG_FILENAME = "random_M_" + LOG_FILENAME
     if (CONFIG.apply_progressively == 1):
         LOG_FILENAME = "progressive_" + LOG_FILENAME
+    if (CONFIG.apply_progressively_perm == 1):
+        LOG_FILENAME = "progressive_perm_" + LOG_FILENAME
     logging.basicConfig(
         filename=os.path.join(CONFIG.save_dir, LOG_FILENAME), 
         format='%(message)s', 

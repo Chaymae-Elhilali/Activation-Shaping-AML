@@ -38,9 +38,11 @@ class RecordModeRule:
    EXTENSION = 2: Do not binarize either Ms nor activations when applying M"""
 def get_domain_adaptation_hook(model, i):
         def activation_shaping_hook(module, input, output):
+
             if (CONFIG.apply_progressively == 1 and model.current_layer_to_apply != i):
-                return output
-            
+                return output  
+            if (CONFIG.apply_progressively_perm == 1 and model.current_layer_to_apply < i):
+                return output  
 
             #RECORD mode: record the activations using the chosen record_mode function
             if (model.state == DomainAdaptationMode.RECORD):
@@ -49,8 +51,7 @@ def get_domain_adaptation_hook(model, i):
                 else:
                     M = output.clone().detach()
 
-                #To handle the different Mi, we can simply multiply the new M with the product of all the previous
-                #or just set model.M[i] = M if it's the first
+                #To handle the multiple Mi, we can simply multiply the new M with the product of all the previous
                 if model.M[i] is None:
                     model.M[i] = M
                 else:
@@ -72,8 +73,8 @@ def get_domain_adaptation_hook(model, i):
                     activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
                 elif (CONFIG.EXTENSION == 1 or CONFIG.EXTENSION == 2):
                     activation = output
-                #model.M[i] is already the product of all the Mi
                 
+                #model.M[i] is already the product of all the Mi
                 activation = torch.mul(activation, model.M[i])
                 #IF index is in layers_only_for_stats, do not apply the transformation. It is used only to produce statistics
                 if (i not in CONFIG.layers_only_for_stats):
@@ -88,15 +89,14 @@ def get_domain_adaptation_hook(model, i):
             elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
                 #In extension 0, output is binarized-filtered as matrix M. In extension 1, output is multiplied by binarized version of itself
                 if (CONFIG.EXTENSION == 0):
-                    output = model.record_mode(model, output)# torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
+                    output = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
                 #With EXTENSION=2, TEST_BINARIZE does not actually binarize activations but still keeps 
                 #only the values >= K; kind of like computing M over itself and then applying it
                 elif (CONFIG.EXTENSION == 1):
                     output = torch.mul(output, model.record_mode(model, output))
                 #With EXTENSION=2, TEST_BINARIZE is equal to TEST
             
-            #In TEST mode, do nothing
-                
+            #In TEST mode, do nothing    
             return output
         return activation_shaping_hook
 
@@ -124,14 +124,14 @@ class ResNet18Extended(nn.Module):
         
         #Register hooks
         #Make a list of all network convolutional layers to easily iterate over them
-        all_layers = [] #[self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4] 
+        all_layers = []
         for layer_group in [self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4]:
             for layer in layer_group:
                 all_layers.append(layer.conv1)
                 all_layers.append(layer.conv2)
         #Hook into the convolutional layers
         n_applied = len(layers_to_apply)
-        for index,l in enumerate(layers_to_apply):
+        for index,l in enumerate(layers_to_apply):#TODO
             all_layers[l].register_forward_hook(get_domain_adaptation_hook(self, index))
         #Use an array to keep last generated M
         self.M = [None for _ in range(n_applied)]
@@ -168,7 +168,8 @@ class ResNet18Extended(nn.Module):
     def extend_M_for_bigger_batch(self, multiply_factor):
         #For each m in M, and for each matrix in m, extend it by multiply_factor over dimension 0 (batch size)
         for i in range(len(self.M)):
-            self.M[i] = torch.cat([self.M[i]]*multiply_factor, dim=0)
+            if (self.M[i] is not None):
+                self.M[i] = torch.cat([self.M[i]]*multiply_factor, dim=0)
 
     #DEBUG ONLY method - clone entire model
     def clone(self):

@@ -29,5 +29,7 @@ def parse_arguments():
     parser.add_argument('--layers_only_for_stats', type=str, default="")
     parser.add_argument('--random_M_on_second', type=int, default=0)
     parser.add_argument('--apply_progressively', type=int, default=0)
+    parser.add_argument('--apply_progressively_perm', type=int, default=0)
+    parser.add_argument('--randomized_ds', type=int, default=0)
 
     return _clear_args(parser.parse_args())
