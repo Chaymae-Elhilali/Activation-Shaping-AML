@@ -131,7 +131,7 @@ def load_data():
         test_loaders[target_domain] = SeededDataLoader(
             test_dataset[target_domain],
             batch_size=CONFIG.batch_size,
-            shuffle=False,
+            shuffle=True,
             num_workers=CONFIG.num_workers,
             pin_memory=True,
             persistent_workers=True

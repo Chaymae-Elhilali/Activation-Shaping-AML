@@ -11,11 +11,12 @@ class DomainAdaptationMode:
     TEST = 2
     TEST_BINARIZE = 3
 
-#Define a class for the RECORD mode's rule for generating M: by threshold or by top-k
+#Functions to record activation maps
 class RecordModeRule:
+    #Simple binarization with a threshold (generally 0)
     def THRESHOLD(model, output):
         return torch.where(output <= model.K, torch.zeros_like(output), torch.ones_like(output))
-    
+    #TopK percent
     def TOP_K(model, output):
         #If the record mode is by top-k, we record the top-k
         #Matrix Output has 4 dimensions: batch_size, filters, height, width
@@ -33,30 +34,30 @@ class RecordModeRule:
         #Reshape the output back to 4D
         return binarized_output.view(output.shape)
 
-"""EXTENSION = 0: Like extension point 1.
-   EXTENSION = 1: Binarize stored Ms, do not binarize activations when applying M (M works as a filter)
-   EXTENSION = 2: Do not binarize either Ms nor activations when applying M"""
+
 def get_domain_adaptation_hook(model, i):
         def activation_shaping_hook(module, input, output):
-
+            #Extension to allow sliding or progressive application of the module
             if (CONFIG.apply_progressively == 1 and model.current_layer_to_apply != i):
                 return output  
             if (CONFIG.apply_progressively_perm == 1 and model.current_layer_to_apply < i):
                 return output  
 
-            #RECORD mode: record the activations using the chosen record_mode function
+            #Record mode: record the activation map
             if (model.state == DomainAdaptationMode.RECORD):
                 if (CONFIG.EXTENSION < 2):
+                    #With extension 0 or 1, the recorded activation are passed through the record_mode function
                     M = model.record_mode(model, output).detach()
                 else:
+                    #With extension 2, the recorded activation are a simple copy
                     M = output.clone().detach()
 
                 #To handle the multiple Mi, we can simply multiply the new M with the product of all the previous
                 if model.M[i] is None:
                     model.M[i] = M
                 else:
-                    model.M[i] = torch.mul(model.M[i], M)
-                
+                    model.M[i] = model.M[i] * M
+
                 #Statistics
                 if (CONFIG.print_stats == 1):
                     percentage_m = torch.sum(M) / M.numel()
@@ -74,45 +75,46 @@ def get_domain_adaptation_hook(model, i):
                 elif (CONFIG.EXTENSION == 1 or CONFIG.EXTENSION == 2):
                     activation = output
                 
-                #model.M[i] is already the product of all the Mi
-                activation = torch.mul(activation, model.M[i])
-                #IF index is in layers_only_for_stats, do not apply the transformation. It is used only to produce statistics
+                #In domain generalization model.M[i] is already the product of all the Mi
+                activation = activation * model.M[i]
+
+                #If index is in layers_only_for_stats, do not apply the transformation. It is used only to produce statistics
                 if (i not in CONFIG.layers_only_for_stats):
                     output = activation
 
                 if (CONFIG.print_stats == 1):
-                    #Statistics
                     model.statistics[f"{i}"]["total_out"] = torch.sum(activation) / activation.numel()
 
             
-            #TEST_BINARIZE mode: binarize the output using the chosen record_mode function
+            #TEST_BINARIZE mode: binarize the output during test mode
             elif (model.state == DomainAdaptationMode.TEST_BINARIZE):
-                #In extension 0, output is binarized-filtered as matrix M. In extension 1, output is multiplied by binarized version of itself
                 if (CONFIG.EXTENSION == 0):
                     output = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
-                #With EXTENSION=2, TEST_BINARIZE does not actually binarize activations but still keeps 
-                #only the values >= K; kind of like computing M over itself and then applying it
+
+                #In EXTENSION 1, output is not binarized but filtered, depending on the record mode
                 elif (CONFIG.EXTENSION == 1):
-                    output = torch.mul(output, model.record_mode(model, output))
-                #With EXTENSION=2, TEST_BINARIZE is equal to TEST
-            
+                    output = output * model.record_mode(model, output)
+
+                #In EXTENSION 2, TEST_BINARIZE is equal to TEST
+
             #In TEST mode, do nothing    
             return output
         return activation_shaping_hook
 
-def M_random_generator(shape, alpha):
-    M = torch.ones(shape, device='cuda:0')
-    M = torch.where(torch.rand(shape, device='cuda:0') <= alpha, M, torch.zeros(shape, device='cuda:0')).to(CONFIG.device)
-    return M
-
+#Random activation shaping function
 def simple_activation_shaping_hook(module, input, output):
+    def M_random_generator(shape, alpha):
+        M = torch.ones(shape, device='cuda:0')
+        M = torch.where(torch.rand(shape, device='cuda:0') <= alpha, M, torch.zeros(shape, device='cuda:0')).to(CONFIG.device)
+        return M
     activation = torch.where(output <= 0, torch.zeros_like(output), torch.ones_like(output))
     output = torch.mul(activation, M_random_generator(activation.shape, 0.9))
     return output
 
-class ResNet18Extended(nn.Module):
 
+class ResNet18Extended(nn.Module):
     def __init__(self, record_mode, K, layers_to_apply):
+
         super(ResNet18Extended, self).__init__()
         self.resnet = resnet18(weights=ResNet18_Weights)
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, 7)
@@ -124,23 +126,30 @@ class ResNet18Extended(nn.Module):
         
         #Register hooks
         #Make a list of all network convolutional layers to easily iterate over them
+        #(first convolutional layer is not included)
         all_layers = []
         for layer_group in [self.resnet.layer1, self.resnet.layer2, self.resnet.layer3, self.resnet.layer4]:
             for layer in layer_group:
-                all_layers.append(layer.conv1)
-                all_layers.append(layer.conv2)
+                if (CONFIG.layer_type == "conv"):
+                    all_layers.append(layer.conv1)
+                    all_layers.append(layer.conv2)
+                elif (CONFIG.layer_type == "bn"):
+                    all_layers.append(layer.bn1) 
+                    all_layers.append(layer.bn2)
+
         #Hook into the convolutional layers
         n_applied = len(layers_to_apply)
-        for index,l in enumerate(layers_to_apply):#TODO
+        for index,l in enumerate(layers_to_apply):
             all_layers[l].register_forward_hook(get_domain_adaptation_hook(self, index))
-        #Use an array to keep last generated M
+        
+        #Use an array to keep the recorded activation for the layers where the module is attached
         self.M = [None for _ in range(n_applied)]
 
         #Use a dictionary to store arbitrary statistics
         self.statistics = {}
         self.layers_to_apply = layers_to_apply
 
-        #Extra experiment, using random activation map on second (third) layer
+        #Extra experiment, using random activation map on third layer
         if (CONFIG.random_M_on_second == 1):
             all_layers[1].register_forward_hook(simple_activation_shaping_hook)
         

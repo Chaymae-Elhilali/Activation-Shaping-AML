@@ -31,5 +31,8 @@ def parse_arguments():
     parser.add_argument('--apply_progressively', type=int, default=0)
     parser.add_argument('--apply_progressively_perm', type=int, default=0)
     parser.add_argument('--randomized_ds', type=int, default=0)
+    parser.add_argument('--generalization_test_only', type=int, default=0)
+
+    parser.add_argument('--layer_type', type=str, default='conv')
 
     return _clear_args(parser.parse_args())
